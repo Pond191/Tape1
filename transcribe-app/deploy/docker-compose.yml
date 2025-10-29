@@ -1,0 +1,71 @@
+version: "3.9"
+services:
+  api:
+    build: ../backend
+    environment:
+      - TRANSCRIBE_STORAGE_DIR=/data
+      - TRANSCRIBE_DATABASE_URL=postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
+      - CELERY_EAGER=0
+    volumes:
+      - ../storage:/data
+    depends_on:
+      - db
+      - redis
+    networks:
+      - transcribe
+
+  worker:
+    build: ../backend
+    command: celery -A backend.workers.tasks.celery_app worker --loglevel=info
+    environment:
+      - TRANSCRIBE_STORAGE_DIR=/data
+      - TRANSCRIBE_DATABASE_URL=postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
+      - CELERY_EAGER=0
+    volumes:
+      - ../storage:/data
+    depends_on:
+      - db
+      - redis
+    networks:
+      - transcribe
+
+  redis:
+    image: redis:7
+    networks:
+      - transcribe
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: transcribe
+      POSTGRES_USER: transcribe
+      POSTGRES_PASSWORD: transcribe
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - transcribe
+
+  web:
+    build: ../frontend
+    networks:
+      - transcribe
+
+  nginx:
+    image: nginx:1.25
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../storage:/data:ro
+    depends_on:
+      - api
+      - web
+    ports:
+      - "8080:80"
+    networks:
+      - transcribe
+
+volumes:
+  db-data:
+
+networks:
+  transcribe:
+    driver: bridge

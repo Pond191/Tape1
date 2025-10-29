@@ -1,0 +1,20 @@
+{
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 3.2,
+      "text": "เฮ็ด งาน อยู่จักได๋",
+      "confidence": 0.95,
+      "speaker": "SPEAKER_00",
+      "language": "th"
+    },
+    {
+      "start": 3.2,
+      "end": 6.5,
+      "text": "เรียน ML กับ prof. Smith",
+      "confidence": 0.91,
+      "speaker": "SPEAKER_01",
+      "language": "th"
+    }
+  ]
+}

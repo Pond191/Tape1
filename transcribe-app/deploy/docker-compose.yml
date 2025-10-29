@@ -49,6 +49,8 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    networks:
+      - transcribe
 
   worker:
     build: ../backend
@@ -71,6 +73,8 @@ services:
       api:
         condition: service_started
     restart: unless-stopped
+    networks:
+      - transcribe
 
 
   web:

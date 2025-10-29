@@ -40,11 +40,13 @@ async def create_transcription_job(
     with audio_path.open("wb") as destination:
         shutil.copyfileobj(file.file, destination)
 
-    source_path = Path(getattr(file.file, "name", ""))
-    if source_path.exists():
-        sidecar = source_path.with_suffix(".json")
-        if sidecar.exists():
-            shutil.copy(sidecar, audio_path.with_suffix(".json"))
+    source_path_value = getattr(file.file, "name", None)
+    if isinstance(source_path_value, str) and source_path_value:
+        source_path = Path(source_path_value)
+        if source_path.exists():
+            sidecar = source_path.with_suffix(".json")
+            if sidecar.exists():
+                shutil.copy(sidecar, audio_path.with_suffix(".json"))
 
     payload.update({"audio_path": str(audio_path)})
 

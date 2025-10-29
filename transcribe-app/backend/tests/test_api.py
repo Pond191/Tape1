@@ -59,3 +59,26 @@ def test_create_and_retrieve_job(tmp_path):
 
     download = client.get(f"/api/jobs/{job_id}/result", params={"format": "srt"})
     assert download.status_code == 200
+
+
+def test_upload_handles_missing_underlying_name(tmp_path):
+    app = setup_app(tmp_path)
+    client = TestClient(app)
+
+    audio_path = tmp_path / "sample.mp3"
+    audio_path.write_bytes(b"fake mp3 data")
+
+    response = client.post(
+        "/api/transcribe",
+        files={"file": ("sample.mp3", audio_path.open("rb"), "audio/mpeg")},
+        data={"options": json.dumps({})},
+    )
+
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    status = client.get(f"/api/jobs/{job_id}").json()
+    if status["status"] == "pending":
+        status = client.get(f"/api/jobs/{job_id}").json()
+
+    assert status["status"] == "finished"

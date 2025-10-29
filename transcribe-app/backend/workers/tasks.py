@@ -41,7 +41,10 @@ def get_engine() -> ASREngine:
 
 def enqueue_transcription(job_id: str) -> None:
     if celery_app:
-        celery_app.send_task("backend.workers.tasks.process_transcription", args=[job_id])
+        if celery_app.conf.task_always_eager:
+            process_transcription(job_id)
+        else:
+            celery_app.send_task("backend.workers.tasks.process_transcription", args=[job_id])
     else:
         process_transcription(job_id)
 

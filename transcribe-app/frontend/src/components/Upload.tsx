@@ -1,3 +1,4 @@
+import axios from "axios";
 import { useRef, useState } from "react";
 import { TranscribeOptions, uploadAudio } from "../api/client";
 
@@ -19,10 +20,13 @@ export default function Upload({ onJobCreated }: Props) {
   const [lexicon, setLexicon] = useState<string>("Node-RED, MQTT, VLAN");
   const [contextPrompt, setContextPrompt] = useState<string>("สงขลานครินทร์ หาดใหญ่ ศรีตรัง");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setError(null);
     if (!fileInput.current?.files?.length) {
+      setError("กรุณาเลือกไฟล์เสียงก่อนเริ่มถอดเทป");
       return;
     }
     const file = fileInput.current.files[0];
@@ -40,6 +44,22 @@ export default function Upload({ onJobCreated }: Props) {
       onJobCreated(jobId);
       if (fileInput.current) {
         fileInput.current.value = "";
+      }
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 413) {
+          setError("ไฟล์มีขนาดใหญ่เกินไป (จำกัด 200MB)");
+        } else if (typeof err.response?.data?.detail === "string") {
+          setError(err.response.data.detail);
+        } else {
+          setError("อัปโหลดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        }
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("อัปโหลดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
       }
     } finally {
       setLoading(false);
@@ -82,6 +102,7 @@ export default function Upload({ onJobCreated }: Props) {
       <button type="submit" disabled={loading}>
         {loading ? "กำลังอัปโหลด..." : "ถอดเทป"}
       </button>
+      {error && <p className="error">{error}</p>}
     </form>
   );
 }

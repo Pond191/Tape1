@@ -59,8 +59,10 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    entrypoint: ["/bin/sh", "-lc"]
-    command: celery -A backend.workers.tasks.celery_app worker --loglevel=info
+    entrypoint:
+      - python
+      - -m
+      - backend.workers.run_worker
     environment:
       TRANSCRIBE_STORAGE_DIR: /data
       TRANSCRIBE_DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
@@ -104,10 +106,10 @@ services:
     ports:
       - "8080:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost/ >/dev/null 2>&1"]
-      interval: 30s
+      test: ["CMD-SHELL", "curl -fsS http://localhost/nginx-health || exit 1"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
     networks:
       - transcribe
 

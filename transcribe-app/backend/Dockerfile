@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
  && rm -rf /var/lib/apt/lists/*
 
+RUN addgroup --system app && adduser --system --ingroup app --uid 1000 app
+
 # pip ใหม่ช่วยเรื่อง build พวก wheel
 RUN python -m pip install --upgrade pip
 

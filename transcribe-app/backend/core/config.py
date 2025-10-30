@@ -16,6 +16,7 @@ class Settings:
     environment: str = os.getenv("TRANSCRIBE_ENVIRONMENT", "development")
     log_level: str = os.getenv("TRANSCRIBE_LOG_LEVEL", "INFO")
     storage_dir: str = os.getenv("TRANSCRIBE_STORAGE_DIR", "/tmp/transcribe-storage")
+    max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "200"))
     retention_days: int = int(os.getenv("TRANSCRIBE_RETENTION_DAYS", "30"))
     database_url: str = os.getenv(
         "TRANSCRIBE_DATABASE_URL",

@@ -25,7 +25,9 @@ services:
     restart: unless-stopped
 
   api:
-    build: ../backend
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     environment:
       TRANSCRIBE_STORAGE_DIR: /data
       TRANSCRIBE_DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
@@ -50,14 +52,17 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
-    user: "1000:1000"
     networks:
       - transcribe
 
   worker:
-    build: ../backend
-    entrypoint: ["/bin/sh", "-lc"]
-    command: celery -A backend.workers.tasks.celery_app worker --loglevel=info
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    entrypoint:
+      - python
+      - -m
+      - backend.workers.run_worker
     environment:
       TRANSCRIBE_STORAGE_DIR: /data
       TRANSCRIBE_DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
@@ -76,10 +81,8 @@ services:
       api:
         condition: service_started
     restart: unless-stopped
-    user: "1000:1000"
     networks:
       - transcribe
-
 
   web:
     build: ../frontend
@@ -103,13 +106,12 @@ services:
     ports:
       - "8080:80"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost/ >/dev/null 2>&1"]
-      interval: 30s
+      test: ["CMD-SHELL", "curl -fsS http://localhost/nginx-health || exit 1"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
     networks:
       - transcribe
-
 
 volumes:
   db-data:

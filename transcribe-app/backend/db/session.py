@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Dict
+from typing import Dict, Generator, Iterator
 
 from .models import TranscriptionJob
 
@@ -27,9 +27,25 @@ class InMemorySession:
         pass
 
 
+def _create_session() -> InMemorySession:
+    return InMemorySession()
+
+
+def get_db() -> Generator[InMemorySession, None, None]:
+    session = _create_session()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def get_session() -> Generator[InMemorySession, None, None]:
+    yield from get_db()
+
+
 @contextmanager
-def get_session():
-    session = InMemorySession()
+def db_session() -> Iterator[InMemorySession]:
+    session = _create_session()
     try:
         yield session
     finally:

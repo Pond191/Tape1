@@ -15,7 +15,7 @@ from ..asr.types import Segment
 from ..core.config import get_settings
 from ..core.logging import logger
 from ..db.models import JobStatus, TranscriptionJob, TranscriptArtifact, TranscriptSegment
-from ..db.session import get_session
+from ..db.session import db_session
 
 settings = get_settings()
 
@@ -62,7 +62,7 @@ if celery_app:
 def process_transcription(job_id: str) -> None:
     logger.info("Starting transcription job %s", job_id)
     engine = get_engine()
-    with get_session() as session:
+    with db_session() as session:
         job = session.get(TranscriptionJob, job_id)
         if not job:
             logger.error("Job %s not found", job_id)

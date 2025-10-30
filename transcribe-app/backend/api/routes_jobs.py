@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 
 from ..db.models import JobStatus, TranscriptionJob, TranscriptSegment
 from ..db.schema import JobResultResponse, JobStatusResponse, SegmentSchema
-from ..db.session import get_session
+from ..db.session import InMemorySession, get_db
 
 router = APIRouter()
 
@@ -26,7 +26,9 @@ def _serialize_segments(segments: list[TranscriptSegment]) -> list[SegmentSchema
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str, session = Depends(get_session)) -> JobStatusResponse:
+def get_job_status(
+    job_id: str, session: InMemorySession = Depends(get_db)
+) -> JobStatusResponse:
     job = session.get(TranscriptionJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -44,7 +46,7 @@ def get_job_status(job_id: str, session = Depends(get_session)) -> JobStatusResp
 def download_job_result(
     job_id: str,
     format: str = "txt",
-    session = Depends(get_session),
+    session: InMemorySession = Depends(get_db),
 ):
     job = session.get(TranscriptionJob, job_id)
     if not job:
@@ -62,7 +64,9 @@ def download_job_result(
 
 
 @router.get("/jobs/{job_id}/result/inline", response_model=JobResultResponse)
-def inline_job_result(job_id: str, session = Depends(get_session)) -> JobResultResponse:
+def inline_job_result(
+    job_id: str, session: InMemorySession = Depends(get_db)
+) -> JobResultResponse:
     job = session.get(TranscriptionJob, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

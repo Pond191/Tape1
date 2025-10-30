@@ -16,7 +16,7 @@ from ..core.config import get_settings
 from ..core.logging import logger
 from ..db.models import TranscriptionJob
 from ..db.schema import UploadResponse
-from ..db.session import get_session
+from ..db.session import InMemorySession, get_db
 from ..workers.tasks import enqueue_transcription
 
 router = APIRouter()
@@ -147,7 +147,7 @@ def _copy_sidecar(source_path: Path | None, destination: Path) -> None:
 
 async def _create_job(
     *,
-    session,
+    session: InMemorySession,
     file: UploadFile,
     model_size: str,
     enable_dialect_map: bool,
@@ -230,7 +230,7 @@ async def upload_audio(
     enable_punct: bool = Form(True),
     enable_itn: bool = Form(True),
     language_hint: str | None = Form(None),
-    session = Depends(get_session),
+    session: InMemorySession = Depends(get_db),
 ) -> UploadResponse:
     return await _create_job(
         session=session,
@@ -248,7 +248,7 @@ async def upload_audio(
 async def create_transcription_job(
     file: UploadFile = File(...),
     options: str = Form("{}"),
-    session = Depends(get_session),
+    session: InMemorySession = Depends(get_db),
 ) -> UploadResponse:
     try:
         payload: Dict[str, Any] = json.loads(options) if options else {}

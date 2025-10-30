@@ -1,3 +1,6 @@
+version: "3.9"
+name: transcribe-app
+
 services:
   db:
     image: postgres:15
@@ -33,6 +36,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - CELERY_EAGER=0
+      - MAX_UPLOAD_MB=200
     volumes:
       - ../storage:/data
     ports:
@@ -49,6 +53,7 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    user: "1000:1000"
     networks:
       - transcribe
 
@@ -73,6 +78,7 @@ services:
       api:
         condition: service_started
     restart: unless-stopped
+    user: "1000:1000"
     networks:
       - transcribe
 
@@ -92,10 +98,17 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ../storage:/data:ro
     depends_on:
-      - api                                # ✅ ไม่ต้องเป็น condition: service_healthy
-      - web
+      api:
+        condition: service_started
+      web:
+        condition: service_started
     ports:
       - "8080:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost/ >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - transcribe
 

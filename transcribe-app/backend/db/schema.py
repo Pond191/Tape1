@@ -32,6 +32,14 @@ class JobCreateResponse:
 
 
 @dataclass
+class UploadResponse:
+    job_id: str
+
+    def dict(self) -> Dict:
+        return _to_dict(self)
+
+
+@dataclass
 class JobStatusResponse:
     job_id: str
     status: JobStatus

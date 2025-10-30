@@ -19,15 +19,14 @@ from ..db.session import get_session
 
 settings = get_settings()
 
-if Celery:
+celery_app = None
+if Celery and os.getenv("CELERY_BROKER_URL"):
     celery_app = Celery(
         "transcribe",
-        broker=settings.broker_url,
-        backend=settings.backend_url,
+        broker=os.getenv("CELERY_BROKER_URL"),
+        backend=os.getenv("CELERY_RESULT_BACKEND", os.getenv("REDIS_URL")),
     )
     celery_app.conf.update(task_always_eager=os.getenv("CELERY_EAGER", "1") == "1")
-else:  # pragma: no cover - fallback for environments without Celery
-    celery_app = None
 
 _engine: ASREngine | None = None
 
@@ -40,13 +39,17 @@ def get_engine() -> ASREngine:
 
 
 def enqueue_transcription(job_id: str) -> None:
-    if celery_app:
-        if celery_app.conf.task_always_eager:
-            process_transcription(job_id)
-        else:
-            celery_app.send_task("backend.workers.tasks.process_transcription", args=[job_id])
-    else:
+    try:
+        if celery_app:
+            process_transcription_task.delay(job_id)
+            return
+    except Exception:
+        logger.exception("Celery enqueue failed; falling back to local processing")
+
+    try:
         process_transcription(job_id)
+    except Exception:
+        logger.exception("Local transcription failed")
 
 
 if celery_app:

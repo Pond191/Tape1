@@ -24,6 +24,12 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 COPY . .
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-# ให้ Uvicorn รันแน่ๆ (ถ้า Dockerfile เดิมมี CMD อยู่แล้วข้ามได้)
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Copy entrypoint and normalize line endings for Windows checkouts
+COPY deploy/api/start-api.sh /usr/local/bin/start-api
+RUN (command -v dos2unix >/dev/null 2>&1 || \
+     (apk add --no-cache dos2unix || (apt-get update && apt-get install -y dos2unix))) \
+ && dos2unix /usr/local/bin/start-api \
+ && chmod +x /usr/local/bin/start-api
+
+# Use this entrypoint
+ENTRYPOINT ["/usr/local/bin/start-api"]

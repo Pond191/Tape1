@@ -30,12 +30,56 @@ export interface JobResult {
   dialect_mapped_text?: string | null;
 }
 
+async function safeJson(response: Response): Promise<any | null> {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    console.warn("Unable to parse error payload", err);
+    return null;
+  }
+}
+
 export async function uploadAudio(file: File, options: TranscribeOptions): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("options", JSON.stringify(options));
-  const response = await axios.post("/api/transcribe", formData);
-  return response.data.job_id;
+
+  const modelSize = options.model_size ?? "small";
+  formData.append("model_size", modelSize);
+
+  const appendBoolean = (key: string, value: boolean | undefined) => {
+    if (typeof value === "boolean") {
+      formData.append(key, String(value));
+    }
+  };
+
+  if (options.language_hint) {
+    formData.append("language_hint", options.language_hint);
+  }
+  appendBoolean("enable_dialect_map", options.enable_dialect_map);
+  appendBoolean("enable_diarization", options.enable_diarization);
+  appendBoolean("enable_punct", options.enable_punct);
+  appendBoolean("enable_itn", options.enable_itn);
+
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    const errorPayload = await safeJson(response);
+    const message =
+      (errorPayload?.message && String(errorPayload.message)) ||
+      (errorPayload?.detail && String(errorPayload.detail)) ||
+      `อัปโหลดไม่สำเร็จ (HTTP ${response.status})`;
+    throw new Error(message);
+  }
+
+  const data = await response.json();
+  return data.job_id as string;
 }
 
 export async function fetchJob(jobId: string): Promise<JobStatus> {

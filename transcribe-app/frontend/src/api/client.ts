@@ -7,8 +7,6 @@ export interface TranscribeOptions {
   enable_punct?: boolean;
   enable_itn?: boolean;
   enable_dialect_map?: boolean;
-  custom_lexicon?: string[];
-  context_prompt?: string;
 }
 
 export interface JobStatus {

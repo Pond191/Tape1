@@ -17,8 +17,6 @@ const defaultOptions: TranscribeOptions = {
 export default function Upload({ onJobCreated }: Props) {
   const fileInput = useRef<HTMLInputElement | null>(null);
   const [options, setOptions] = useState<TranscribeOptions>(defaultOptions);
-  const [lexicon, setLexicon] = useState<string>("Node-RED, MQTT, VLAN");
-  const [contextPrompt, setContextPrompt] = useState<string>("สงขลานครินทร์ หาดใหญ่ ศรีตรัง");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,12 +31,7 @@ export default function Upload({ onJobCreated }: Props) {
     setLoading(true);
     try {
       const payload: TranscribeOptions = {
-        ...options,
-        custom_lexicon: lexicon
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        context_prompt: contextPrompt
+        ...options
       };
       const jobId = await uploadAudio(file, payload);
       onJobCreated(jobId);
@@ -82,14 +75,6 @@ export default function Upload({ onJobCreated }: Props) {
           <option value="medium">medium</option>
           <option value="large-v3">large-v3</option>
         </select>
-      </label>
-      <label>
-        Context prompt
-        <textarea value={contextPrompt} onChange={(event) => setContextPrompt(event.target.value)} />
-      </label>
-      <label>
-        Custom lexicon (comma separated)
-        <input value={lexicon} onChange={(event) => setLexicon(event.target.value)} />
       </label>
       <label>
         เปิด Dialect mapping

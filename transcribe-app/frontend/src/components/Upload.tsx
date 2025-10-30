@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useRef, useState } from "react";
 import { TranscribeOptions, uploadAudio } from "../api/client";
 
@@ -17,8 +16,6 @@ const defaultOptions: TranscribeOptions = {
 export default function Upload({ onJobCreated }: Props) {
   const fileInput = useRef<HTMLInputElement | null>(null);
   const [options, setOptions] = useState<TranscribeOptions>(defaultOptions);
-  const [lexicon, setLexicon] = useState<string>("Node-RED, MQTT, VLAN");
-  const [contextPrompt, setContextPrompt] = useState<string>("สงขลานครินทร์ หาดใหญ่ ศรีตรัง");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,12 +30,7 @@ export default function Upload({ onJobCreated }: Props) {
     setLoading(true);
     try {
       const payload: TranscribeOptions = {
-        ...options,
-        custom_lexicon: lexicon
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        context_prompt: contextPrompt
+        ...options
       };
       const jobId = await uploadAudio(file, payload);
       onJobCreated(jobId);
@@ -48,15 +40,7 @@ export default function Upload({ onJobCreated }: Props) {
       setError(null);
     } catch (err) {
       console.error(err);
-      if (axios.isAxiosError(err)) {
-        if (err.response?.status === 413) {
-          setError("ไฟล์มีขนาดใหญ่เกินไป (จำกัด 200MB)");
-        } else if (typeof err.response?.data?.detail === "string") {
-          setError(err.response.data.detail);
-        } else {
-          setError("อัปโหลดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-        }
-      } else if (err instanceof Error) {
+      if (err instanceof Error) {
         setError(err.message);
       } else {
         setError("อัปโหลดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
@@ -69,7 +53,7 @@ export default function Upload({ onJobCreated }: Props) {
   return (
     <form onSubmit={handleSubmit} className="upload-form">
       <h2>อัปโหลดไฟล์เสียง</h2>
-      <input ref={fileInput} type="file" accept="audio/*" required />
+      <input ref={fileInput} type="file" accept="audio/*" required disabled={loading} />
       <label>
         เลือกโมเดล
         <select
@@ -82,14 +66,6 @@ export default function Upload({ onJobCreated }: Props) {
           <option value="medium">medium</option>
           <option value="large-v3">large-v3</option>
         </select>
-      </label>
-      <label>
-        Context prompt
-        <textarea value={contextPrompt} onChange={(event) => setContextPrompt(event.target.value)} />
-      </label>
-      <label>
-        Custom lexicon (comma separated)
-        <input value={lexicon} onChange={(event) => setLexicon(event.target.value)} />
       </label>
       <label>
         เปิด Dialect mapping

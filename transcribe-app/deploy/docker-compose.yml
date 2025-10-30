@@ -1,3 +1,4 @@
+
 version: "3.9"
 name: transcribe-app
 
@@ -27,7 +28,10 @@ services:
 
   api:
     build: ../backend
-    command: uvicorn backend.app:app --host 0.0.0.0 --port 8000
+    command: >
+      sh -lc "mkdir -p /data/uploads /data/jobs &&
+              chown -R 1000:1000 /data || true &&
+              uvicorn backend.app:app --host 0.0.0.0 --port 8000 --proxy-headers"
     environment:
       - TRANSCRIBE_STORAGE_DIR=/data
       - TRANSCRIBE_DATABASE_URL=postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe

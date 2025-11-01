@@ -46,6 +46,11 @@ class JobStatusResponse:
     progress: float = 0.0
     eta_seconds: Optional[int] = None
     error: Optional[str] = None
+    text: Optional[str] = None
+    output_txt_path: Optional[str] = None
+    output_srt_path: Optional[str] = None
+    output_vtt_path: Optional[str] = None
+    output_jsonl_path: Optional[str] = None
 
     def dict(self) -> Dict:
         return _to_dict(self)

@@ -9,7 +9,8 @@ export default function App() {
   const [selectedResult, setSelectedResult] = useState<JobResult | undefined>();
 
   const handleJobCreated = (jobId: string) => {
-    setJobs((current) => [...current, { job_id: jobId, status: "pending", progress: 0 } as JobStatus]);
+    const initialJob: JobStatus = { job_id: jobId, status: "pending", progress: 0 };
+    setJobs((current) => [...current, initialJob]);
   };
 
   const handleResult = useCallback((result: JobResult) => {

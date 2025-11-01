@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
 from ..core.logging import logger
 from ..db.models import TranscriptionJob
 from ..db.schema import UploadResponse
-from ..db.session import InMemorySession, get_db
+from ..db.session import get_db
 from ..workers.tasks import enqueue_transcription
 
 router = APIRouter()
@@ -147,7 +148,7 @@ def _copy_sidecar(source_path: Path | None, destination: Path) -> None:
 
 async def _create_job(
     *,
-    session: InMemorySession,
+    session: Session,
     file: UploadFile,
     model_size: str,
     enable_dialect_map: bool,
@@ -166,7 +167,8 @@ async def _create_job(
     if detected_type and not detected_type.startswith("audio/"):
         raise HTTPException(status_code=415, detail={"message": "ชนิดไฟล์ไม่รองรับ"})
 
-    job_id = str(uuid.uuid4())
+    job_uuid = uuid.uuid4()
+    job_id = str(job_uuid)
     upload_day = datetime.utcnow().strftime("%Y%m%d")
     upload_dir = Path(settings.storage_dir) / "uploads" / upload_day
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -202,15 +204,16 @@ async def _create_job(
         job_options["language_hint"] = language_hint
 
     job = TranscriptionJob(
-        id=job_id,
+        id=job_uuid,
         filename=original_name,
         model_size=model_size,
         options=job_options,
     )
     session.add(job)
-    session.flush()
+    session.commit()
+    session.refresh(job)
 
-    enqueue_transcription(job_id)
+    enqueue_transcription(str(job.id))
     logger.info(
         "Created transcription job %s for %s (%s bytes)",
         job_id,
@@ -218,7 +221,7 @@ async def _create_job(
         size,
     )
 
-    return UploadResponse(job_id=job_id)
+    return UploadResponse(job_id=str(job.id))
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -230,7 +233,7 @@ async def upload_audio(
     enable_punct: bool = Form(True),
     enable_itn: bool = Form(True),
     language_hint: str | None = Form(None),
-    session: InMemorySession = Depends(get_db),
+    session: Session = Depends(get_db),
 ) -> UploadResponse:
     return await _create_job(
         session=session,
@@ -248,7 +251,7 @@ async def upload_audio(
 async def create_transcription_job(
     file: UploadFile = File(...),
     options: str = Form("{}"),
-    session: InMemorySession = Depends(get_db),
+    session: Session = Depends(get_db),
 ) -> UploadResponse:
     try:
         payload: Dict[str, Any] = json.loads(options) if options else {}

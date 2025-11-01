@@ -15,7 +15,7 @@ _connect_args = {}
 if _settings.database_url.startswith("sqlite"):
     _connect_args["check_same_thread"] = False
 
-_engine = create_engine(
+engine = create_engine(
     _settings.database_url,
     future=True,
     echo=False,
@@ -23,7 +23,7 @@ _engine = create_engine(
     connect_args=_connect_args,
 )
 SessionLocal = sessionmaker(
-    bind=_engine,
+    bind=engine,
     autoflush=False,
     autocommit=False,
     expire_on_commit=False,
@@ -32,10 +32,7 @@ SessionLocal = sessionmaker(
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=_engine)
-
-
-init_db()
+    Base.metadata.create_all(bind=engine)
 
 
 def _create_session() -> Session:

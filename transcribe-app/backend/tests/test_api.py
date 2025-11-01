@@ -68,8 +68,17 @@ def test_create_and_retrieve_job(tmp_path):
     assert "ทำ" in (result.get("dialect_mapped_text") or "")
     assert result["metadata"]["original_filename"] == "ฝึกพูดภาษาอีสาน EP3.mp3"
 
-    download = client.get(f"/api/jobs/{job_id}/result", params={"format": "srt"})
+    download = client.get(f"/api/jobs/{job_id}/srt")
     assert download.status_code == 200
+
+    status = client.get(f"/api/jobs/{job_id}").json()
+    assert status["text"]
+    txt_path = Path(status["output_txt_path"])
+    assert txt_path.exists()
+    assert txt_path.name == "transcript.txt"
+    jsonl_path = Path(status["output_jsonl_path"])
+    assert jsonl_path.exists()
+    assert jsonl_path.name == "segments.jsonl"
 
 
 def test_upload_handles_missing_underlying_name(tmp_path):

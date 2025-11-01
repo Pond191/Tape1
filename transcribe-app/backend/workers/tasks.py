@@ -106,7 +106,15 @@ def _run_transcription(job_id: str, task=None) -> None:
             logger.exception("Job %s failed", job_id)
             return
 
-        _store_result(session, job, result, audio_path)
+        try:
+            _store_result(session, job, result, audio_path)
+        except Exception as exc:  # pragma: no cover - safety
+            job.status = JobStatus.failed
+            job.error = f"Failed to store results: {exc}"
+            job.touch()
+            session.commit()
+            logger.exception("Failed to store results for job %s", job_id)
+            return
         job.status = JobStatus.finished
         job.touch()
         session.commit()
@@ -171,14 +179,15 @@ def _store_result(session: Session, job: TranscriptionJob, result, audio_path: P
             )
         )
 
-    output_dir = Path(settings.storage_dir) / str(job.id)
+    output_dir = Path(settings.storage_dir) / "jobs" / str(job.id)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     text_path = output_dir / "transcript.txt"
     text_path.write_text(result.text, encoding="utf-8")
+    job.output_txt_path = str(text_path)
     _register_artifact(job, "txt", text_path)
 
-    jsonl_path = output_dir / "transcript.jsonl"
+    jsonl_path = output_dir / "segments.jsonl"
     with jsonl_path.open("w", encoding="utf-8") as file:
         for segment in result.segments:
             payload = {
@@ -190,16 +199,20 @@ def _store_result(session: Session, job: TranscriptionJob, result, audio_path: P
                 "language": segment.language,
             }
             file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    job.output_jsonl_path = str(jsonl_path)
     _register_artifact(job, "jsonl", jsonl_path)
 
     srt_path = output_dir / "transcript.srt"
     srt_path.write_text(_to_srt(result.segments), encoding="utf-8")
+    job.output_srt_path = str(srt_path)
     _register_artifact(job, "srt", srt_path)
 
     vtt_path = output_dir / "transcript.vtt"
     vtt_path.write_text(_to_vtt(result.segments), encoding="utf-8")
+    job.output_vtt_path = str(vtt_path)
     _register_artifact(job, "vtt", vtt_path)
 
+    job.text = result.text
     job.options.update(
         {
             "text": result.text,

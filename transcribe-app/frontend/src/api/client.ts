@@ -14,6 +14,11 @@ export interface JobStatus {
   status: "pending" | "processing" | "finished" | "failed";
   progress: number;
   error?: string;
+  text?: string | null;
+  output_txt_path?: string | null;
+  output_srt_path?: string | null;
+  output_vtt_path?: string | null;
+  output_jsonl_path?: string | null;
 }
 
 export interface TranscriptSegment {
@@ -93,8 +98,14 @@ export async function fetchResult(jobId: string): Promise<JobResult> {
 }
 
 export async function downloadResult(jobId: string, format: string): Promise<void> {
-  const response = await axios.get(`/api/jobs/${jobId}/result`, {
-    params: { format },
+  const endpointMap: Record<string, string> = {
+    txt: "txt",
+    srt: "srt",
+    vtt: "vtt",
+    jsonl: "jsonl"
+  };
+  const endpoint = endpointMap[format] || `result?format=${format}`;
+  const response = await axios.get(`/api/jobs/${jobId}/${endpoint}`, {
     responseType: "blob"
   });
   const url = window.URL.createObjectURL(new Blob([response.data]));

@@ -49,6 +49,11 @@ def get_job_status(job_id: str, session: Session = Depends(get_db)) -> JobStatus
         progress=progress,
         eta_seconds=None,
         error=job.error,
+        text=job.text,
+        output_txt_path=job.output_txt_path,
+        output_srt_path=job.output_srt_path,
+        output_vtt_path=job.output_vtt_path,
+        output_jsonl_path=job.output_jsonl_path,
     )
 
 
@@ -62,13 +67,90 @@ def download_job_result(
     if job.status != JobStatus.finished:
         raise HTTPException(status_code=400, detail="Job not finished yet")
 
-    artifact = next((a for a in job.artifacts if a.format == format), None)
-    if not artifact:
+    path_map = {
+        "txt": job.output_txt_path,
+        "srt": job.output_srt_path,
+        "vtt": job.output_vtt_path,
+        "jsonl": job.output_jsonl_path,
+    }
+    selected = path_map.get(format)
+    if not selected:
+        artifact = next((a for a in job.artifacts if a.format == format), None)
+        if artifact:
+            selected = artifact.path
+    if not selected:
         raise HTTPException(status_code=404, detail="Format not available")
-    path = Path(artifact.path)
+    path = Path(selected)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Artifact missing")
-    return FileResponse(path)
+    media_types = {
+        "txt": "text/plain",
+        "srt": "application/x-subrip",
+        "vtt": "text/vtt",
+        "jsonl": "application/json",
+    }
+    filename = f"{job_id}.{format}"
+    return _build_file_response(path, media_types.get(format, "application/octet-stream"), filename)
+
+
+def _build_file_response(path: Path, media_type: str, filename: str) -> FileResponse:
+    try:
+        return FileResponse(path, media_type=media_type, filename=filename)
+    except TypeError:  # pragma: no cover - compatibility with lightweight stubs
+        return FileResponse(path)
+
+
+def _serve_file(path_value: str | None, not_found_message: str, media_type: str, filename: str) -> FileResponse:
+    if not path_value:
+        raise HTTPException(status_code=404, detail=not_found_message)
+    path = Path(path_value)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=not_found_message)
+    return _build_file_response(path, media_type, filename)
+
+
+@router.get("/jobs/{job_id}/txt")
+def get_txt(job_id: str, session: Session = Depends(get_db)) -> FileResponse:
+    job = _get_job(session, job_id)
+    return _serve_file(
+        job.output_txt_path,
+        "TXT not found",
+        "text/plain",
+        f"{job_id}.txt",
+    )
+
+
+@router.get("/jobs/{job_id}/srt")
+def get_srt(job_id: str, session: Session = Depends(get_db)) -> FileResponse:
+    job = _get_job(session, job_id)
+    return _serve_file(
+        job.output_srt_path,
+        "SRT not found",
+        "application/x-subrip",
+        f"{job_id}.srt",
+    )
+
+
+@router.get("/jobs/{job_id}/vtt")
+def get_vtt(job_id: str, session: Session = Depends(get_db)) -> FileResponse:
+    job = _get_job(session, job_id)
+    return _serve_file(
+        job.output_vtt_path,
+        "VTT not found",
+        "text/vtt",
+        f"{job_id}.vtt",
+    )
+
+
+@router.get("/jobs/{job_id}/jsonl")
+def get_jsonl(job_id: str, session: Session = Depends(get_db)) -> FileResponse:
+    job = _get_job(session, job_id)
+    return _serve_file(
+        job.output_jsonl_path,
+        "JSONL not found",
+        "application/json",
+        f"{job_id}.jsonl",
+    )
 
 
 @router.get("/jobs/{job_id}/result/inline", response_model=JobResultResponse)
@@ -81,10 +163,11 @@ def inline_job_result(
     segments = _serialize_segments(job.segments)
     metadata = job.options or {}
     dialect_text = metadata.get("dialect_text")
+    text = job.text or metadata.get("text", "")
     return JobResultResponse(
         job_id=str(job.id),
         status=job.status,
-        text=metadata.get("text", ""),
+        text=text,
         segments=segments,
         dialect_mapped_text=dialect_text,
         metadata=metadata,

@@ -63,6 +63,11 @@ class TranscriptionJob(Base):
         MutableDict.as_mutable(JSON), nullable=False, default=dict
     )
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_txt_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_srt_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_vtt_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_jsonl_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )

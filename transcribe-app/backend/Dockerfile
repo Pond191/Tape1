@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 COPY deploy/api/start-api.sh /usr/local/bin/start-api
-RUN dos2unix /usr/local/bin/start-api && chmod +x /usr/local/bin/start-api
+COPY deploy/api/start-worker.sh /usr/local/bin/start-worker
+RUN dos2unix /usr/local/bin/start-api /usr/local/bin/start-worker \
+    && chmod +x /usr/local/bin/start-api /usr/local/bin/start-worker
 
 ENTRYPOINT ["/usr/local/bin/start-api"]

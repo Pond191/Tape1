@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
 try:  # pragma: no cover - optional dependency
-    from celery import Celery, shared_task
+    from celery import shared_task
 except Exception:  # pragma: no cover
-    Celery = None  # type: ignore
 
     def shared_task(*_args, **_kwargs):  # type: ignore
         def decorator(func):
@@ -17,6 +15,7 @@ except Exception:  # pragma: no cover
 
         return decorator
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from ..asr.engine import ASREngine, TranscriptionOptions, load_engine
@@ -29,21 +28,16 @@ from ..db.models import (
     TranscriptSegment,
     TranscriptionJob,
 )
-from ..db.session import db_session
+from ..db.session import db_session, init_db
+from .celery_app import QUEUE_NAME, celery_app
 
 settings = get_settings()
 
-celery_app: Optional[Celery] = None
-if Celery and os.getenv("CELERY_BROKER_URL"):
-    celery_app = Celery(
-        "transcribe",
-        broker=os.getenv("CELERY_BROKER_URL"),
-        backend=os.getenv("CELERY_RESULT_BACKEND", os.getenv("REDIS_URL")),
-    )
-    celery_app.conf.update(task_always_eager=os.getenv("CELERY_EAGER", "1") == "1")
-    celery_app.set_default()
-
-_QUEUE_NAME = os.getenv("CELERY_QUEUE", "transcribe")
+# Ensure metadata is created even when the worker starts before the API
+try:  # pragma: no cover - the DB may be unavailable during imports in tests
+    init_db()
+except Exception:
+    logger.debug("Database not ready during worker import; will retry later")
 _engine: ASREngine | None = None
 
 
@@ -57,7 +51,7 @@ def get_engine() -> ASREngine:
 def enqueue_transcription(job_id: str) -> None:
     try:
         if celery_app:
-            process_transcription.apply_async(args=[str(job_id)], queue=_QUEUE_NAME)
+            process_transcription.apply_async(args=[str(job_id)], queue=QUEUE_NAME)
             return
     except Exception:
         logger.exception("Celery enqueue failed; falling back to local processing")
@@ -120,7 +114,23 @@ def _run_transcription(job_id: str, task=None) -> None:
 
 
 def _load_job(session: Session, job_uuid: uuid.UUID, task) -> Optional[TranscriptionJob]:
-    job = session.get(TranscriptionJob, job_uuid)
+    try:
+        job = session.get(TranscriptionJob, job_uuid)
+    except OperationalError as exc:
+        session.rollback()
+        logger.warning("Database not ready when fetching job %s: %s", job_uuid, exc)
+        try:
+            init_db()
+        except Exception as init_exc:  # pragma: no cover - best effort logging
+            logger.debug("Retrying after init_db failure: %s", init_exc)
+        if task is not None and hasattr(task, "retry"):
+            try:
+                raise task.retry(exc=exc)
+            except task.MaxRetriesExceededError:  # type: ignore[attr-defined]
+                logger.error("Job %s not found after retries", job_uuid)
+                return None
+        raise
+
     if job:
         return job
 

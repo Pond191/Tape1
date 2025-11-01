@@ -18,9 +18,10 @@ class Settings:
     storage_dir: str = os.getenv("TRANSCRIBE_STORAGE_DIR", "/tmp/transcribe-storage")
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "200"))
     retention_days: int = int(os.getenv("TRANSCRIBE_RETENTION_DAYS", "30"))
-    database_url: str = os.getenv(
-        "TRANSCRIBE_DATABASE_URL",
-        "postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe",
+    database_url: str = (
+        os.getenv("TRANSCRIBE_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+        or "postgresql+psycopg://transcribe:transcribe@db:5432/transcribe"
     )
     broker_url: str = os.getenv("TRANSCRIBE_BROKER_URL", "redis://redis:6379/0")
     backend_url: str = os.getenv("TRANSCRIBE_BACKEND_URL", "redis://redis:6379/1")

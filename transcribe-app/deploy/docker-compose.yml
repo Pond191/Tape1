@@ -1,8 +1,8 @@
 name: transcribe-app
 
 x-database-environment: &database-urls
-  TRANSCRIBE_DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
-  DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
+  TRANSCRIBE_DATABASE_URL: postgresql+psycopg://transcribe:transcribe@db:5432/transcribe
+  DATABASE_URL: postgresql+psycopg://transcribe:transcribe@db:5432/transcribe
 
 services:
   db:
@@ -39,6 +39,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CELERY_EAGER: "0"
+      CELERY_QUEUE: transcribe
       MAX_UPLOAD_MB: "200"
     volumes:
       - ../storage:/data
@@ -63,9 +64,7 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     entrypoint:
-      - python
-      - -m
-      - backend.workers.run_worker
+      - /usr/local/bin/start-worker
     environment:
       TRANSCRIBE_STORAGE_DIR: /data
       <<: *database-urls
@@ -73,6 +72,8 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CELERY_EAGER: "0"
+      CELERY_QUEUE: transcribe
+      CELERY_QUEUES: transcribe,celery
     volumes:
       - ../storage:/data
     depends_on:

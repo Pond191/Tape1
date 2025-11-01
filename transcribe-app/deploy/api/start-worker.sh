@@ -7,9 +7,10 @@ chown -R 1000:1000 /data 2>/dev/null || true
 python - <<'PY'
 from backend.db.session import init_db
 
-init_db()
+try:
+    init_db()
+except Exception as exc:
+    print(f"Database initialisation failed: {exc}")
 PY
 
-echo "MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-unset}"
-
-exec gosu app uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+exec gosu app python -m backend.workers.run_worker

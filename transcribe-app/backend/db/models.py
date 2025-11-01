@@ -51,7 +51,7 @@ class JobStatus(str, enum.Enum):
 
 
 class TranscriptionJob(Base):
-    __tablename__ = "transcription_jobs"
+    __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -91,7 +91,7 @@ class TranscriptSegment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[uuid.UUID] = mapped_column(
-        GUID(), ForeignKey("transcription_jobs.id", ondelete="CASCADE"), index=True
+        GUID(), ForeignKey("jobs.id", ondelete="CASCADE"), index=True
     )
     start: Mapped[float] = mapped_column(Float, nullable=False)
     end: Mapped[float] = mapped_column(Float, nullable=False)
@@ -108,7 +108,7 @@ class TranscriptArtifact(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[uuid.UUID] = mapped_column(
-        GUID(), ForeignKey("transcription_jobs.id", ondelete="CASCADE"), index=True
+        GUID(), ForeignKey("jobs.id", ondelete="CASCADE"), index=True
     )
     format: Mapped[str] = mapped_column(String(32), nullable=False)
     path: Mapped[str] = mapped_column(Text, nullable=False)

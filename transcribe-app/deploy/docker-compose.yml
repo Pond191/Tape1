@@ -1,5 +1,9 @@
 name: transcribe-app
 
+x-database-environment: &database-urls
+  TRANSCRIBE_DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
+  DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
+
 services:
   db:
     image: postgres:15
@@ -30,8 +34,7 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       TRANSCRIBE_STORAGE_DIR: /data
-      TRANSCRIBE_DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
-      DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe   # เผื่อโค้ดอ่านตัวนี้
+      <<: *database-urls
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
@@ -65,8 +68,7 @@ services:
       - backend.workers.run_worker
     environment:
       TRANSCRIBE_STORAGE_DIR: /data
-      TRANSCRIBE_DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
-      DATABASE_URL: postgresql+psycopg2://transcribe:transcribe@db:5432/transcribe
+      <<: *database-urls
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0

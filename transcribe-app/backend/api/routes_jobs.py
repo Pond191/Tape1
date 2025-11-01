@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
 from ..db.models import JobStatus, TranscriptionJob, TranscriptSegment
 from ..db.schema import JobResultResponse, JobStatusResponse, SegmentSchema
-from ..db.session import InMemorySession, get_db
+from ..db.session import get_db
 
 router = APIRouter()
 
@@ -25,16 +28,23 @@ def _serialize_segments(segments: list[TranscriptSegment]) -> list[SegmentSchema
     ]
 
 
-@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job_status(
-    job_id: str, session: InMemorySession = Depends(get_db)
-) -> JobStatusResponse:
-    job = session.get(TranscriptionJob, job_id)
+def _get_job(session: Session, job_id: str) -> TranscriptionJob:
+    try:
+        job_uuid = uuid.UUID(str(job_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Job not found") from exc
+    job = session.get(TranscriptionJob, job_uuid)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+def get_job_status(job_id: str, session: Session = Depends(get_db)) -> JobStatusResponse:
+    job = _get_job(session, job_id)
     progress = 1.0 if job.status == JobStatus.finished else 0.0
     return JobStatusResponse(
-        job_id=job.id,
+        job_id=str(job.id),
         status=job.status,
         progress=progress,
         eta_seconds=None,
@@ -46,11 +56,9 @@ def get_job_status(
 def download_job_result(
     job_id: str,
     format: str = "txt",
-    session: InMemorySession = Depends(get_db),
+    session: Session = Depends(get_db),
 ):
-    job = session.get(TranscriptionJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job(session, job_id)
     if job.status != JobStatus.finished:
         raise HTTPException(status_code=400, detail="Job not finished yet")
 
@@ -65,18 +73,16 @@ def download_job_result(
 
 @router.get("/jobs/{job_id}/result/inline", response_model=JobResultResponse)
 def inline_job_result(
-    job_id: str, session: InMemorySession = Depends(get_db)
+    job_id: str, session: Session = Depends(get_db)
 ) -> JobResultResponse:
-    job = session.get(TranscriptionJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job(session, job_id)
     if job.status != JobStatus.finished:
         raise HTTPException(status_code=400, detail="Job not finished yet")
     segments = _serialize_segments(job.segments)
     metadata = job.options or {}
     dialect_text = metadata.get("dialect_text")
     return JobResultResponse(
-        job_id=job.id,
+        job_id=str(job.id),
         status=job.status,
         text=metadata.get("text", ""),
         segments=segments,

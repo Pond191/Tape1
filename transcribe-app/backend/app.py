@@ -26,6 +26,7 @@ from .api.routes_jobs import router as jobs_router
 from .api.routes_transcribe import router as transcribe_router
 from .core.config import get_settings
 from .core.logging import configure_logging, logger
+from .db import Base, engine
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -43,6 +44,8 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
+    Base.metadata.create_all(bind=engine)
+
     base_dir = Path(settings.storage_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
     uploads_dir = base_dir / "uploads"

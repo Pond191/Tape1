@@ -93,6 +93,14 @@ class TestClient:
             if isinstance(default, Depends):
                 dependency = default.dependency
                 value = dependency()
+                if inspect.isgenerator(value):
+                    gen = value
+                    try:
+                        value = next(gen)
+                    except StopIteration:
+                        value = None
+                    else:
+                        cleanups.append(lambda *_args, _gen=gen: _gen.close())
                 if hasattr(value, "__enter__") and hasattr(value, "__exit__"):
                     ctx = value
                     value = ctx.__enter__()

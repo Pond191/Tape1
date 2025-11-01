@@ -1,37 +1,48 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Dict, Generator, Iterator
+from typing import Generator, Iterator
 
-from .models import TranscriptionJob
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
-_DATABASE: Dict[str, TranscriptionJob] = {}
+from ..core.config import get_settings
+from .models import Base
+
+_settings = get_settings()
+
+_connect_args = {}
+if _settings.database_url.startswith("sqlite"):
+    _connect_args["check_same_thread"] = False
+
+_engine = create_engine(
+    _settings.database_url,
+    future=True,
+    echo=False,
+    pool_pre_ping=True,
+    connect_args=_connect_args,
+)
+SessionLocal = sessionmaker(
+    bind=_engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+    class_=Session,
+)
 
 
-class InMemorySession:
-    def add(self, job: TranscriptionJob) -> None:
-        _DATABASE[job.id] = job
-
-    def get(self, model, key):
-        if model is TranscriptionJob:
-            return _DATABASE.get(key)
-        raise KeyError(f"Unsupported model {model}")
-
-    def commit(self) -> None:  # pragma: no cover - compatibility hook
-        pass
-
-    def flush(self) -> None:  # pragma: no cover - compatibility hook
-        pass
-
-    def close(self) -> None:  # pragma: no cover - compatibility hook
-        pass
+def init_db() -> None:
+    Base.metadata.create_all(bind=_engine)
 
 
-def _create_session() -> InMemorySession:
-    return InMemorySession()
+init_db()
 
 
-def get_db() -> Generator[InMemorySession, None, None]:
+def _create_session() -> Session:
+    return SessionLocal()
+
+
+def get_db() -> Generator[Session, None, None]:
     session = _create_session()
     try:
         yield session
@@ -39,14 +50,22 @@ def get_db() -> Generator[InMemorySession, None, None]:
         session.close()
 
 
-def get_session() -> Generator[InMemorySession, None, None]:
+def get_session() -> Generator[Session, None, None]:
     yield from get_db()
 
 
 @contextmanager
-def db_session() -> Iterator[InMemorySession]:
+def db_session() -> Iterator[Session]:
     session = _create_session()
     try:
         yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
+
+
+# Backwards compatibility alias for existing imports
+InMemorySession = Session

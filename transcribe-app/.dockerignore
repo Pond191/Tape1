@@ -12,3 +12,4 @@ storage
 !deploy/
 !deploy/api/
 !deploy/api/start-api.sh
+!deploy/api/start-worker.sh

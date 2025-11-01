@@ -12,7 +12,8 @@ except Exception:  # pragma: no cover - optional dependency
     Celery = None  # type: ignore
 
 from backend.core.logging import configure_logging, logger
-from backend.workers.tasks import celery_app
+from backend.db.session import init_db
+from backend.workers.celery_app import QUEUE_NAME, celery_app
 
 
 def _sleep_forever(message: str, delay: float = 60.0) -> None:
@@ -41,6 +42,11 @@ def main() -> None:
     log_level_setting = os.getenv("CELERY_LOG_LEVEL", "INFO")
     configure_logging(log_level_setting.upper())
 
+    try:
+        init_db()
+    except Exception as exc:  # pragma: no cover - log but continue letting Celery retry
+        logger.warning("Database initialisation failed during startup: %s", exc)
+
     broker_url = os.getenv("CELERY_BROKER_URL")
     if not broker_url:
         _sleep_forever("CELERY_BROKER_URL not configured; worker idling")
@@ -54,15 +60,10 @@ def main() -> None:
     retry_delay = float(os.getenv("CELERY_BROKER_RETRY_DELAY", "5"))
     _ensure_broker_connection(celery_app, broker_url, retry_delay)
 
-    argv: List[str] = [
-        "worker",
-        "-l",
-        log_level_setting.lower(),
-    ]
+    argv: List[str] = ["worker", "-l", log_level_setting.lower()]
 
-    queues = os.getenv("CELERY_QUEUES")
-    if queues:
-        argv.extend(["-Q", queues])
+    queues = os.getenv("CELERY_QUEUES") or f"{QUEUE_NAME},celery"
+    argv.extend(["-Q", queues])
 
     try:
         celery_app.worker_main(argv)

@@ -152,8 +152,14 @@ def _transcribe(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     result = engine.transcribe(prepared_audio, options)
 
+    segment_texts = [
+        segment.text.strip()
+        for segment in result.segments
+        if getattr(segment, "text", "").strip()
+    ]
+    plain_text = (result.text or "").strip() or "\n".join(segment_texts)
     text_path = job_dir / "transcript.txt"
-    text_path.write_text(result.text, encoding="utf-8")
+    text_path.write_text(plain_text, encoding="utf-8")
     logger.info("Wrote %s", text_path)
 
     jsonl_path = job_dir / "segments.jsonl"
@@ -168,7 +174,7 @@ def _transcribe(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> Dict[str, Any]:
     logger.info("Wrote %s", vtt_path)
 
     return {
-        "text": result.text,
+        "text": plain_text,
         "dialect_text": result.dialect_mapped_text,
         "txt_path": str(text_path),
         "srt_path": str(srt_path),
@@ -235,8 +241,14 @@ def _mark_job_finished(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> None:
         if not job:
             logger.error("Job %s missing when marking finished", job_uuid)
             return
+        text_value = payload.get("text")
+        if (not text_value or not text_value.strip()) and payload.get("txt_path"):
+            try:
+                text_value = Path(payload["txt_path"]).read_text(encoding="utf-8")
+            except OSError as exc:  # pragma: no cover - defensive logging
+                logger.warning("Unable to read transcript for job %s: %s", job_uuid, exc)
         job.status = JobStatus.finished
-        job.text = payload.get("text")
+        job.text = text_value
         job.dialect_text = payload.get("dialect_text")
         job.output_txt_path = payload.get("txt_path")
         job.output_srt_path = payload.get("srt_path")

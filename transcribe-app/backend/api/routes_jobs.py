@@ -47,10 +47,19 @@ def _build_file_response(path: Path, media_type: str, filename: str) -> FileResp
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)
 def get_job(job_id: str, session: Session = Depends(get_db)) -> JobDetailResponse:
     job = _get_job(session, job_id)
+    text_value = job.text
+    if (not text_value or not text_value.strip()) and job.output_txt_path:
+        try:
+            text_path = Path(job.output_txt_path)
+            if text_path.exists():
+                text_value = text_path.read_text(encoding="utf-8")
+        except OSError as exc:  # pragma: no cover - defensive logging
+            logger.warning("Unable to read transcript for job %s: %s", job_id, exc)
+
     return JobDetailResponse(
         id=job.id,
         status=job.status,
-        text=job.text,
+        text=text_value,
         dialect_text=job.dialect_text,
         error_message=job.error_message,
         original_filename=job.original_filename,

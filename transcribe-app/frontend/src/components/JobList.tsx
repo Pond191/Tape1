@@ -55,16 +55,7 @@ export default function JobList({ jobs, setJobs }: Props) {
             {job.status === "finished" && (
               <div className="downloads">
                 <button onClick={() => downloadFile(job.files.txt, `${job.id}.txt`)} disabled={!job.files.txt}>
-                  TXT
-                </button>
-                <button onClick={() => downloadFile(job.files.srt, `${job.id}.srt`)} disabled={!job.files.srt}>
-                  SRT
-                </button>
-                <button onClick={() => downloadFile(job.files.vtt, `${job.id}.vtt`)} disabled={!job.files.vtt}>
-                  VTT
-                </button>
-                <button onClick={() => downloadFile(job.files.jsonl, `${job.id}.jsonl`)} disabled={!job.files.jsonl}>
-                  JSONL
+                  ดาวน์โหลด TXT
                 </button>
               </div>
             )}

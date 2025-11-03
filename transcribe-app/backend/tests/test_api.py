@@ -14,6 +14,7 @@ def setup_app(tmp_path, max_upload_mb: int = 200):
     os.environ["TRANSCRIBE_DATABASE_URL"] = f"sqlite+pysqlite:///{db_path}"
     os.environ["CELERY_EAGER"] = "1"
     os.environ["MAX_UPLOAD_MB"] = str(max_upload_mb)
+    os.environ["TRANSCRIBE_ASR_BACKEND"] = "dummy"
 
     from backend.core import config
 

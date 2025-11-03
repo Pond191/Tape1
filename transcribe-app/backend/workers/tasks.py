@@ -160,7 +160,7 @@ def _transcribe(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> Dict[str, Any]:
     plain_text = (result.text or "").strip() or "\n".join(segment_texts)
     text_path = job_dir / "transcript.txt"
     text_path.write_text(plain_text, encoding="utf-8")
-    logger.info("Wrote %s", text_path)
+    logger.info("Wrote transcript.txt with %d characters", len(plain_text))
 
     jsonl_path = job_dir / "segments.jsonl"
     _write_segments(jsonl_path, result.segments)

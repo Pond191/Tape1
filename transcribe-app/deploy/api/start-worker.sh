@@ -7,10 +7,7 @@ chown -R 1000:1000 /data 2>/dev/null || true
 python - <<'PY'
 from backend.db.session import init_db
 
-try:
-    init_db()
-except Exception as exc:
-    print(f"Database initialisation failed: {exc}")
+init_db()
 PY
 
-exec gosu app python -m backend.workers.run_worker
+exec gosu app celery -A backend.workers.celery_app worker -l info -Q transcribe,celery

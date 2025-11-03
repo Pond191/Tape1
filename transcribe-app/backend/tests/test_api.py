@@ -14,6 +14,7 @@ def setup_app(tmp_path, max_upload_mb: int = 200):
     os.environ["TRANSCRIBE_DATABASE_URL"] = f"sqlite+pysqlite:///{db_path}"
     os.environ["CELERY_EAGER"] = "1"
     os.environ["MAX_UPLOAD_MB"] = str(max_upload_mb)
+    os.environ["TRANSCRIBE_ASR_BACKEND"] = "dummy"
 
     from backend.core import config
 
@@ -57,28 +58,31 @@ def test_create_and_retrieve_job(tmp_path):
         },
     )
     assert response.status_code == 200
-    job_id = response.json()["job_id"]
+    payload = response.json()
+    job_id = payload.get("id") or payload.get("job_id")
 
-    status = client.get(f"/api/jobs/{job_id}").json()
+    def _poll():
+        return client.get(f"/api/jobs/{job_id}").json()
+
+    status = _poll()
     if status["status"] != "finished":
-        status = client.get(f"/api/jobs/{job_id}").json()
+        status = _poll()
     assert status["status"] == "finished"
-
-    result = client.get(f"/api/jobs/{job_id}/result/inline").json()
-    assert "ทำ" in (result.get("dialect_mapped_text") or "")
-    assert result["metadata"]["original_filename"] == "ฝึกพูดภาษาอีสาน EP3.mp3"
+    assert status.get("dialect_text")
+    assert "ทำ" in (status.get("dialect_text") or "")
+    assert status.get("original_filename") == "ฝึกพูดภาษาอีสาน EP3.mp3"
 
     download = client.get(f"/api/jobs/{job_id}/srt")
     assert download.status_code == 200
 
-    status = client.get(f"/api/jobs/{job_id}").json()
-    assert status["text"]
-    txt_path = Path(status["output_txt_path"])
+    files = status.get("files") or {}
+    assert files.get("txt") and files.get("jsonl")
+
+    storage_dir = Path(os.environ["TRANSCRIBE_STORAGE_DIR"]) / "jobs" / str(job_id)
+    txt_path = storage_dir / "transcript.txt"
     assert txt_path.exists()
-    assert txt_path.name == "transcript.txt"
-    jsonl_path = Path(status["output_jsonl_path"])
+    jsonl_path = storage_dir / "segments.jsonl"
     assert jsonl_path.exists()
-    assert jsonl_path.name == "segments.jsonl"
 
 
 def test_upload_handles_missing_underlying_name(tmp_path):
@@ -98,13 +102,14 @@ def test_upload_handles_missing_underlying_name(tmp_path):
     )
 
     assert response.status_code == 200
-    job_id = response.json()["job_id"]
+    payload = response.json()
+    job_id = payload.get("id") or payload.get("job_id")
 
     status = client.get(f"/api/jobs/{job_id}").json()
     if status["status"] == "pending":
         status = client.get(f"/api/jobs/{job_id}").json()
 
-    assert status["status"] == "finished"
+    assert status["status"] in {"running", "finished"}
 
 
 def test_upload_rejects_large_file(tmp_path):

@@ -1,6 +1,6 @@
 """Database utilities exports."""
 
 from .models import Base
-from .session import engine
+from .session import get_engine
 
-__all__ = ["Base", "engine"]
+__all__ = ["Base", "get_engine"]

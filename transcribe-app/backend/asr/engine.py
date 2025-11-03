@@ -24,8 +24,6 @@ class TranscriptionOptions:
     enable_punct: bool = True
     enable_itn: bool = True
     enable_dialect_map: bool = False
-    custom_lexicon: Optional[List[str]] = None
-    context_prompt: Optional[str] = None
 
 
 @dataclass
@@ -46,7 +44,6 @@ class DummyWhisperBackend:
         self,
         audio_path: Path,
         options: TranscriptionOptions,
-        prompt_bias: Optional[str] = None,
     ) -> List[Segment]:
         # In test environments we allow storing ground-truth transcripts as JSON
         # next to the audio file. This keeps the pipeline deterministic while the
@@ -90,17 +87,9 @@ class ASREngine:
         self.lang_identifier = lang_identifier or LanguageIdentifier()
         self.dialect_mapper = dialect_mapper or DialectMapper()
 
-    def _build_prompt_bias(self, options: TranscriptionOptions) -> Optional[str]:
-        lexicon = options.custom_lexicon or []
-        if options.context_prompt:
-            lexicon.append(options.context_prompt)
-        if not lexicon:
-            return None
-        return "\n".join(lexicon)
-
     def transcribe(self, audio_path: Path, options: TranscriptionOptions) -> TranscriptionResult:
         audio_path = Path(audio_path)
-        segments = self.backend.transcribe(audio_path, options, self._build_prompt_bias(options))
+        segments = self.backend.transcribe(audio_path, options)
 
         diarized_segments = self._apply_diarization(segments, audio_path, options)
         processed_segments = [

@@ -1,16 +1,13 @@
 import { useRef, useState } from "react";
-import { TranscribeOptions, uploadAudio } from "../api/client";
+import { JobSummary, TranscribeOptions, uploadAudio } from "../api/client";
 
 interface Props {
-  onJobCreated: (jobId: string) => void;
+  onJobCreated: (job: JobSummary) => void;
 }
 
 const defaultOptions: TranscribeOptions = {
   model_size: "small",
-  enable_diarization: true,
-  enable_punct: true,
-  enable_itn: true,
-  enable_dialect_map: true
+  enable_dialect_map: false
 };
 
 export default function Upload({ onJobCreated }: Props) {
@@ -26,14 +23,12 @@ export default function Upload({ onJobCreated }: Props) {
       setError("กรุณาเลือกไฟล์เสียงก่อนเริ่มถอดเทป");
       return;
     }
+
     const file = fileInput.current.files[0];
     setLoading(true);
     try {
-      const payload: TranscribeOptions = {
-        ...options
-      };
-      const jobId = await uploadAudio(file, payload);
-      onJobCreated(jobId);
+      const job = await uploadAudio(file, options);
+      onJobCreated(job);
       if (fileInput.current) {
         fileInput.current.value = "";
       }
@@ -59,21 +54,21 @@ export default function Upload({ onJobCreated }: Props) {
         <select
           value={options.model_size}
           onChange={(event) => setOptions({ ...options, model_size: event.target.value })}
+          disabled={loading}
         >
-          <option value="tiny">tiny</option>
-          <option value="base">base</option>
           <option value="small">small</option>
           <option value="medium">medium</option>
           <option value="large-v3">large-v3</option>
         </select>
       </label>
-      <label>
-        เปิด Dialect mapping
+      <label className="checkbox">
         <input
           type="checkbox"
-          checked={options.enable_dialect_map}
+          checked={Boolean(options.enable_dialect_map)}
           onChange={(event) => setOptions({ ...options, enable_dialect_map: event.target.checked })}
+          disabled={loading}
         />
+        เปิด Dialect mapping
       </label>
       <button type="submit" disabled={loading}>
         {loading ? "กำลังอัปโหลด..." : "ถอดเทป"}

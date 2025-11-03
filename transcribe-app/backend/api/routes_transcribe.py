@@ -1,22 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import mimetypes
 import shutil
 import unicodedata
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
 from ..core.logging import logger
-from ..db.models import TranscriptionJob
-from ..db.schema import UploadResponse
+from ..db.models import JobStatus, TranscriptionJob
+from ..db.schema import JobUploadResponse
 from ..db.session import get_db
 from ..workers.tasks import enqueue_transcription
 
@@ -28,6 +26,7 @@ mimetypes.add_type("audio/mp4", ".m4a")
 mimetypes.add_type("audio/x-m4a", ".m4a")
 
 _CHUNK_SIZE = 1024 * 1024
+_ALLOWED_MODELS = {"small", "medium", "large-v3"}
 
 
 def _sanitize_filename(name: str) -> str:
@@ -120,14 +119,6 @@ async def _persist_upload(destination: Path, upload: UploadFile) -> int:
     return total
 
 
-def _coerce_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
 def _get_source_path(upload: UploadFile) -> Path | None:
     file_obj = getattr(upload, "file", None)
     name = getattr(file_obj, "name", None)
@@ -142,25 +133,39 @@ def _copy_sidecar(source_path: Path | None, destination: Path) -> None:
     if not source_path:
         return
     sidecar = source_path.with_suffix(".json")
-    if sidecar.exists():
+    if not sidecar.exists():
+        return
+    try:
         shutil.copy(sidecar, destination.with_suffix(".json"))
+    except Exception as exc:  # pragma: no cover - best effort logging
+        logger.warning("Failed to copy sidecar %s: %s", sidecar, exc)
 
 
-async def _create_job(
-    *,
-    session: Session,
-    file: UploadFile,
-    model_size: str,
-    enable_dialect_map: bool,
-    enable_diarization: bool,
-    enable_punct: bool,
-    enable_itn: bool,
-    language_hint: str | None,
-) -> UploadResponse:
+def _normalize_model(model_size: str | None) -> str:
+    model = (model_size or settings.default_model_size or "small").strip().lower()
+    if model not in _ALLOWED_MODELS:
+        logger.warning("Model %s not allowed; falling back to small", model)
+        return "small"
+    return model
+
+
+def _coerce_bool(value: bool | str | None) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+@router.post("/upload", response_model=JobUploadResponse)
+async def upload_audio(
+    file: UploadFile = File(...),
+    model_size: str = Form("small"),
+    enable_dialect_map: bool | str | None = Form(False),
+    session: Session = Depends(get_db),
+) -> JobUploadResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail={"message": "กรุณาเลือกไฟล์เสียง"})
-
-    model_size = str(model_size or settings.default_model_size)
 
     content_type = getattr(file, "content_type", "") or ""
     detected_type = content_type or mimetypes.guess_type(file.filename or "")[0]
@@ -181,90 +186,32 @@ async def _create_job(
     size = await _persist_upload(destination, file)
     _copy_sidecar(source_path, destination)
 
-    enable_dialect_map = _coerce_bool(enable_dialect_map)
-    enable_diarization = _coerce_bool(enable_diarization)
-    enable_punct = _coerce_bool(enable_punct)
-    enable_itn = _coerce_bool(enable_itn)
-
-    if isinstance(language_hint, str):
-        language_hint = language_hint.strip() or None
-
-    job_options: Dict[str, Any] = {
-        "audio_path": str(destination),
-        "model_size": model_size,
-        "enable_dialect_map": enable_dialect_map,
-        "enable_diarization": enable_diarization,
-        "enable_punct": enable_punct,
-        "enable_itn": enable_itn,
-        "original_filename": original_name,
-        "content_type": detected_type or content_type,
-        "file_size": size,
-    }
-    if language_hint:
-        job_options["language_hint"] = language_hint
-
     job = TranscriptionJob(
         id=job_uuid,
-        filename=original_name,
-        model_size=model_size,
-        options=job_options,
+        status=JobStatus.pending,
+        original_filename=original_name,
+        model_name=_normalize_model(model_size),
+        dialect_mapping=_coerce_bool(enable_dialect_map),
+        input_path=str(destination),
     )
+
     session.add(job)
     session.commit()
     session.refresh(job)
 
-    enqueue_transcription(str(job.id))
+    try:
+        enqueue_transcription(str(job.id))
+    except Exception as exc:
+        logger.exception("Failed to enqueue job %s: %s", job_id, exc)
+        job.status = JobStatus.error
+        job.error_message = "ไม่สามารถคิวงานได้"
+        session.commit()
+        raise HTTPException(status_code=500, detail={"message": "ไม่สามารถสร้างงานได้"}) from exc
+
     logger.info(
         "Created transcription job %s for %s (%s bytes)",
         job_id,
         original_name,
         size,
     )
-
-    return UploadResponse(job_id=str(job.id))
-
-
-@router.post("/upload", response_model=UploadResponse)
-async def upload_audio(
-    file: UploadFile = File(...),
-    model_size: str = Form(...),
-    enable_dialect_map: bool = Form(False),
-    enable_diarization: bool = Form(True),
-    enable_punct: bool = Form(True),
-    enable_itn: bool = Form(True),
-    language_hint: str | None = Form(None),
-    session: Session = Depends(get_db),
-) -> UploadResponse:
-    return await _create_job(
-        session=session,
-        file=file,
-        model_size=model_size,
-        enable_dialect_map=enable_dialect_map,
-        enable_diarization=enable_diarization,
-        enable_punct=enable_punct,
-        enable_itn=enable_itn,
-        language_hint=language_hint,
-    )
-
-
-@router.post("/transcribe", response_model=UploadResponse)
-async def create_transcription_job(
-    file: UploadFile = File(...),
-    options: str = Form("{}"),
-    session: Session = Depends(get_db),
-) -> UploadResponse:
-    try:
-        payload: Dict[str, Any] = json.loads(options) if options else {}
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail={"message": "Invalid options JSON"}) from exc
-
-    return await _create_job(
-        session=session,
-        file=file,
-        model_size=payload.get("model_size", settings.default_model_size),
-        enable_dialect_map=payload.get("enable_dialect_map", False),
-        enable_diarization=payload.get("enable_diarization", True),
-        enable_punct=payload.get("enable_punct", True),
-        enable_itn=payload.get("enable_itn", True),
-        language_hint=payload.get("language_hint"),
-    )
+    return JobUploadResponse(id=job.id, job_id=job.id, status=job.status)

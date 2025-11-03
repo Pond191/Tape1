@@ -8,7 +8,7 @@
 - ASR abstraction ครอบ Faster-Whisper/CTranslate2 (production) พร้อม fallback Whisper/PyTorch และ dummy engine สำหรับ unit test
 - Speaker diarization (pyannote หรือ energy-based fallback) + word/segment timestamp + confidence
 - Post-processing ครบ: punctuation restoration, ITN, normalization, dialect mapping (เหนือ/อีสาน/ใต้ → ไทยกลาง) และ redaction regex
-- Language auto-detect + context prompt + custom lexicon
+- Language auto-detect พร้อมสวิตช์ Dialect mapping
 - Export ผลลัพธ์ `.txt`, `.srt`, `.vtt`, `.jsonl`
 - REST API, เว็บ UI (React) สำหรับอัปโหลด/ติดตามสถานะ/ดู transcript และดาวน์โหลดผลลัพธ์
 - Queue worker (Celery) และ PostgreSQL เก็บเมทาดาต้า/ผลลัพธ์, Redis เป็น broker
@@ -55,27 +55,25 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 ## สเปค API
 
-### POST `/api/transcribe`
-อัปโหลดไฟล์เสียงพร้อม options (JSON string)
+### POST `/api/upload`
+อัปโหลดไฟล์เสียง (multipart/form-data) พร้อมเลือกโมเดลและเปิด/ปิด Dialect mapping
 
 ตัวอย่าง curl:
 
 ```bash
 curl -F "file=@sample.wav" \
-     -F 'options={"model_size":"large-v3","enable_diarization":true,"enable_punct":true,"enable_itn":true,"enable_dialect_map":true,"custom_lexicon":["Node-RED","MQTT","สงขลานครินทร์"]}' \
-     http://localhost:8000/api/transcribe
+     -F "model_size=medium" \
+     -F "enable_dialect_map=true" \
+     http://localhost:8080/api/upload
 ```
 
-Response: `{ "job_id": "..." }`
+Response: `{ "id": "...", "status": "pending" }`
 
 ### GET `/api/jobs/{job_id}`
-ดูสถานะงานและ progress
+ดูสถานะ ปัญหา (ถ้ามี) ตัวถอดเทป และลิงก์ดาวน์โหลดผลลัพธ์
 
-### GET `/api/jobs/{job_id}/result?format=txt|srt|vtt|jsonl`
-ดาวน์โหลดผลลัพธ์ฟอร์แมตต่าง ๆ
-
-### GET `/api/jobs/{job_id}/result/inline`
-รับ JSON พร้อมข้อความถอดเทป, segments, dialect mapping
+### GET `/api/jobs/{job_id}/txt|srt|vtt|jsonl`
+ดาวน์โหลดไฟล์ผลลัพธ์แต่ละฟอร์แมตโดยตรง
 
 ### GET `/api/health`
 ตรวจสอบการพร้อมใช้งาน (รวม GPU availability)
@@ -95,7 +93,7 @@ python transcribe-app/scripts/benchmark.py transcribe-app/backend/tests/data/sam
 ## คำแนะนำเรื่องความแม่นยำ
 
 - คุณภาพเสียง, ไมค์, เสียงรบกวน และการพูดซ้อน ส่งผลต่อความแม่นยำ
-- ใช้ custom lexicon + context prompt เพื่อช่วยลด WER โดยเฉพาะงานเฉพาะด้าน
+- เปิด Dialect mapping เมื่อเหมาะสมเพื่อช่วยให้ข้อความเป็นไทยกลางได้แม่นยำขึ้น
 - สำหรับภาษาถิ่นเฉพาะ แนะนำสร้าง dialect mapping CSV เพิ่มเติมเพื่อปรับ post-processing
 - ระบบไม่ส่งข้อมูลออกอินเทอร์เน็ต (เหมาะกับการใช้งานออฟไลน์)
 

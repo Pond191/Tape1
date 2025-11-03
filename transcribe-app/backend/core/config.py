@@ -24,7 +24,7 @@ class Settings:
         or "postgresql+psycopg://transcribe:transcribe@db:5432/transcribe"
     )
     broker_url: str = os.getenv("TRANSCRIBE_BROKER_URL", "redis://redis:6379/0")
-    backend_url: str = os.getenv("TRANSCRIBE_BACKEND_URL", "redis://redis:6379/1")
+    backend_url: str = os.getenv("TRANSCRIBE_BACKEND_URL", "redis://redis:6379/0")
     default_model_size: str = os.getenv("TRANSCRIBE_DEFAULT_MODEL_SIZE", "small")
     enable_gpu: bool = _get_bool("TRANSCRIBE_ENABLE_GPU", True)
     vad_engine: str = os.getenv("TRANSCRIBE_VAD_ENGINE", "webrtc")

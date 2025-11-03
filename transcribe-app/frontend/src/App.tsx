@@ -1,21 +1,22 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import Upload from "./components/Upload";
 import JobList from "./components/JobList";
-import TranscriptViewer from "./components/TranscriptViewer";
-import { JobResult, JobStatus } from "./api/client";
+import { JobDetail, JobSummary } from "./api/client";
 
 export default function App() {
-  const [jobs, setJobs] = useState<JobStatus[]>([]);
-  const [selectedResult, setSelectedResult] = useState<JobResult | undefined>();
+  const [jobs, setJobs] = useState<JobDetail[]>([]);
 
-  const handleJobCreated = (jobId: string) => {
-    const initialJob: JobStatus = { job_id: jobId, status: "pending", progress: 0 };
+  const handleJobCreated = (job: JobSummary) => {
+    const initialJob: JobDetail = {
+      id: job.id,
+      status: job.status,
+      text: null,
+      dialect_text: null,
+      error_message: null,
+      files: { txt: null, srt: null, vtt: null, jsonl: null }
+    };
     setJobs((current) => [...current, initialJob]);
   };
-
-  const handleResult = useCallback((result: JobResult) => {
-    setSelectedResult(result);
-  }, []);
 
   return (
     <div className="app">
@@ -25,8 +26,7 @@ export default function App() {
       </header>
       <main>
         <Upload onJobCreated={handleJobCreated} />
-        <JobList jobs={jobs} setJobs={setJobs} onResult={handleResult} />
-        <TranscriptViewer result={selectedResult} />
+        <JobList jobs={jobs} setJobs={setJobs} />
       </main>
     </div>
   );

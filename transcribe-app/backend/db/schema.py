@@ -1,71 +1,49 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Dict, List, Optional
+from typing import Optional
+from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 from .models import JobStatus
 
 
-def _to_dict(obj):
-    return asdict(obj)
+class JobFiles(BaseModel):
+    txt: Optional[str] = None
+    srt: Optional[str] = None
+    vtt: Optional[str] = None
+    jsonl: Optional[str] = None
+
+    class Config:
+        orm_mode = True
 
 
-@dataclass
-class SegmentSchema:
-    start: float
-    end: float
-    text: str
-    speaker: Optional[str] = None
-    confidence: float = 0.0
-    language: Optional[str] = None
-
-    def dict(self) -> Dict:
-        return _to_dict(self)
-
-
-@dataclass
-class JobCreateResponse:
-    job_id: str
-
-    def dict(self) -> Dict:
-        return _to_dict(self)
-
-
-@dataclass
-class UploadResponse:
-    job_id: str
-
-    def dict(self) -> Dict:
-        return _to_dict(self)
-
-
-@dataclass
-class JobStatusResponse:
-    job_id: str
+class JobSummary(BaseModel):
+    id: UUID
     status: JobStatus
-    progress: float = 0.0
-    eta_seconds: Optional[int] = None
-    error: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+
+class JobUploadResponse(JobSummary):
+    job_id: UUID
+
+
+class JobDetailResponse(JobSummary):
     text: Optional[str] = None
-    output_txt_path: Optional[str] = None
-    output_srt_path: Optional[str] = None
-    output_vtt_path: Optional[str] = None
-    output_jsonl_path: Optional[str] = None
+    dialect_text: Optional[str] = None
+    error_message: Optional[str] = None
+    original_filename: Optional[str] = None
+    files: JobFiles = Field(default_factory=JobFiles)
 
-    def dict(self) -> Dict:
-        return _to_dict(self)
+    class Config:
+        orm_mode = True
 
 
-@dataclass
-class JobResultResponse:
-    job_id: str
-    status: JobStatus
-    text: str
-    segments: List[SegmentSchema]
-    dialect_mapped_text: Optional[str]
-    metadata: Dict
-
-    def dict(self) -> Dict:
-        data = _to_dict(self)
-        data["segments"] = [segment.dict() for segment in self.segments]
-        return data
+__all__ = [
+    "JobDetailResponse",
+    "JobFiles",
+    "JobSummary",
+    "JobUploadResponse",
+]

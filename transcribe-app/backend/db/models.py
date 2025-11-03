@@ -3,13 +3,12 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-from sqlalchemy import DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.ext.mutable import MutableDict
-from sqlalchemy.orm import Mapped, declarative_base, mapped_column, relationship
-from sqlalchemy.types import CHAR, JSON, TypeDecorator
+from sqlalchemy.orm import Mapped, declarative_base, mapped_column
+from sqlalchemy.types import CHAR, TypeDecorator
 
 
 class GUID(TypeDecorator):
@@ -45,77 +44,39 @@ Base = declarative_base()
 
 class JobStatus(str, enum.Enum):
     pending = "pending"
-    processing = "processing"
+    running = "running"
     finished = "finished"
-    failed = "failed"
+    error = "error"
 
 
 class TranscriptionJob(Base):
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
-    filename: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[JobStatus] = mapped_column(
-        SAEnum(JobStatus), nullable=False, default=JobStatus.pending
+        SAEnum(JobStatus, name="job_status"), nullable=False, default=JobStatus.pending
     )
-    model_size: Mapped[str] = mapped_column(String(50), nullable=False, default="small")
-    options: Mapped[Dict[str, Any]] = mapped_column(
-        MutableDict.as_mutable(JSON), nullable=False, default=dict
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
     )
-    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    model_name: Mapped[str] = mapped_column(String(50), nullable=False, default="small")
+    dialect_mapping: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    input_path: Mapped[str] = mapped_column(Text, nullable=False)
     output_txt_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     output_srt_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     output_vtt_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     output_jsonl_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
-    )
-
-    segments: Mapped[List["TranscriptSegment"]] = relationship(
-        "TranscriptSegment",
-        back_populates="job",
-        cascade="all, delete-orphan",
-        order_by="TranscriptSegment.start",
-    )
-    artifacts: Mapped[List["TranscriptArtifact"]] = relationship(
-        "TranscriptArtifact",
-        back_populates="job",
-        cascade="all, delete-orphan",
-    )
+    text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dialect_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     def touch(self) -> None:
         self.updated_at = datetime.utcnow()
 
 
-class TranscriptSegment(Base):
-    __tablename__ = "transcript_segments"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        GUID(), ForeignKey("jobs.id", ondelete="CASCADE"), index=True
-    )
-    start: Mapped[float] = mapped_column(Float, nullable=False)
-    end: Mapped[float] = mapped_column(Float, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    speaker: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    language: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-
-    job: Mapped[TranscriptionJob] = relationship("TranscriptionJob", back_populates="segments")
-
-
-class TranscriptArtifact(Base):
-    __tablename__ = "transcript_artifacts"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        GUID(), ForeignKey("jobs.id", ondelete="CASCADE"), index=True
-    )
-    format: Mapped[str] = mapped_column(String(32), nullable=False)
-    path: Mapped[str] = mapped_column(Text, nullable=False)
-
-    job: Mapped[TranscriptionJob] = relationship("TranscriptionJob", back_populates="artifacts")
+__all__ = ["Base", "TranscriptionJob", "JobStatus", "GUID"]

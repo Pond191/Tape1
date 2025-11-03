@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, Optional
 
 try:  # pragma: no cover - optional dependency
     from celery import shared_task
@@ -16,18 +18,12 @@ except Exception:  # pragma: no cover
         return decorator
 
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
 
 from ..asr.engine import ASREngine, TranscriptionOptions, load_engine
 from ..asr.types import Segment
 from ..core.config import get_settings
 from ..core.logging import logger
-from ..db.models import (
-    JobStatus,
-    TranscriptArtifact,
-    TranscriptSegment,
-    TranscriptionJob,
-)
+from ..db.models import JobStatus, TranscriptionJob
 from ..db.session import db_session, init_db
 from .celery_app import QUEUE_NAME, celery_app
 
@@ -38,7 +34,8 @@ try:  # pragma: no cover - the DB may be unavailable during imports in tests
     init_db()
 except Exception:
     logger.debug("Database not ready during worker import; will retry later")
-_engine: ASREngine | None = None
+
+_engine: Optional[ASREngine] = None
 
 
 def get_engine() -> ASREngine:
@@ -49,17 +46,16 @@ def get_engine() -> ASREngine:
 
 
 def enqueue_transcription(job_id: str) -> None:
-    try:
-        if celery_app:
+    if celery_app is not None:
+        try:
             process_transcription.apply_async(args=[str(job_id)], queue=QUEUE_NAME)
             return
-    except Exception:
-        logger.exception("Celery enqueue failed; falling back to local processing")
+        except Exception as exc:
+            logger.exception("Celery enqueue failed for job %s: %s", job_id, exc)
+            raise
 
-    try:
-        _run_transcription(job_id)
-    except Exception:
-        logger.exception("Local transcription failed")
+    logger.warning("Celery unavailable; running job %s synchronously", job_id)
+    _run_transcription(job_id, task=None)
 
 
 @shared_task(
@@ -80,116 +76,146 @@ def _run_transcription(job_id: str, task=None) -> None:
         logger.error("Invalid job id %s", job_id)
         return
 
-    engine = get_engine()
-    with db_session() as session:
-        job = _load_job(session, job_uuid, task)
-        if job is None:
-            return
+    job_payload = _acquire_job(job_uuid, task)
+    if job_payload is None:
+        return
 
-        job.status = JobStatus.processing
-        job.error = None
-        job.touch()
-        session.commit()
-
-        options_dict = dict(job.options or {})
-        job.options = options_dict
-        audio_path = Path(options_dict.get("audio_path", ""))
-        transcription_options = _options_from_payload(options_dict)
-
-        try:
-            result = engine.transcribe(audio_path, transcription_options)
-        except Exception as exc:  # pragma: no cover - safety
-            job.status = JobStatus.failed
-            job.error = str(exc)
-            job.touch()
-            session.commit()
-            logger.exception("Job %s failed", job_id)
-            return
-
-        try:
-            _store_result(session, job, result, audio_path)
-        except Exception as exc:  # pragma: no cover - safety
-            job.status = JobStatus.failed
-            job.error = f"Failed to store results: {exc}"
-            job.touch()
-            session.commit()
-            logger.exception("Failed to store results for job %s", job_id)
-            return
-        job.status = JobStatus.finished
-        job.touch()
-        session.commit()
-        logger.info("Finished transcription job %s", job_id)
-
-
-def _load_job(session: Session, job_uuid: uuid.UUID, task) -> Optional[TranscriptionJob]:
     try:
-        job = session.get(TranscriptionJob, job_uuid)
-    except OperationalError as exc:
-        session.rollback()
-        logger.warning("Database not ready when fetching job %s: %s", job_uuid, exc)
-        try:
-            init_db()
-        except Exception as init_exc:  # pragma: no cover - best effort logging
-            logger.debug("Retrying after init_db failure: %s", init_exc)
-        if task is not None and hasattr(task, "retry"):
-            try:
-                raise task.retry(exc=exc)
-            except task.MaxRetriesExceededError:  # type: ignore[attr-defined]
-                logger.error("Job %s not found after retries", job_uuid)
-                return None
-        raise
+        result_payload = _transcribe(job_uuid, job_payload)
+    except FileNotFoundError as exc:
+        logger.error("Input audio missing for job %s: %s", job_id, exc)
+        _mark_job_error(job_uuid, str(exc))
+        return
+    except Exception as exc:  # pragma: no cover - safety
+        logger.exception("Transcription failed for job %s", job_id)
+        _mark_job_error(job_uuid, str(exc))
+        return
 
-    if job:
-        return job
+    _mark_job_finished(job_uuid, result_payload)
+    logger.info("Finished transcription job %s", job_id)
 
-    if task is not None and hasattr(task, "retry"):
+
+def _acquire_job(job_uuid: uuid.UUID, task) -> Optional[Dict[str, Any]]:
+    with db_session() as session:
         try:
-            raise task.retry()
-        except task.MaxRetriesExceededError:  # type: ignore[attr-defined]
-            logger.error("Job %s not found after retries", job_uuid)
+            job = session.get(TranscriptionJob, job_uuid)
+        except OperationalError as exc:  # pragma: no cover - DB race
+            session.rollback()
+            logger.warning("Database not ready when fetching job %s: %s", job_uuid, exc)
+            if task is not None and hasattr(task, "retry"):
+                try:
+                    raise task.retry(exc=exc)
+                except task.MaxRetriesExceededError:  # type: ignore[attr-defined]
+                    logger.error("Job %s not found after retries", job_uuid)
+                    return None
+            raise
+
+        if job is None:
+            if task is not None and hasattr(task, "retry"):
+                try:
+                    raise task.retry()
+                except task.MaxRetriesExceededError:  # type: ignore[attr-defined]
+                    logger.error("Job %s not found after retries", job_uuid)
+                    return None
+            logger.error("Job %s not found", job_uuid)
             return None
-    logger.error("Job %s not found", job_uuid)
-    return None
+
+        job.status = JobStatus.running
+        job.error_message = None
+        job.touch()
+        session.commit()
+
+        return {
+            "id": job.id,
+            "input_path": job.input_path,
+            "model_name": job.model_name or settings.default_model_size,
+            "dialect_mapping": bool(job.dialect_mapping),
+        }
 
 
-def _options_from_payload(payload: Dict) -> TranscriptionOptions:
-    return TranscriptionOptions(
-        model_size=payload.get("model_size", settings.default_model_size),
-        language_hint=payload.get("language_hint"),
-        enable_diarization=payload.get("enable_diarization", True),
-        enable_punct=payload.get("enable_punct", True),
-        enable_itn=payload.get("enable_itn", True),
-        enable_dialect_map=payload.get("enable_dialect_map", False),
-        custom_lexicon=payload.get("custom_lexicon"),
-        context_prompt=payload.get("context_prompt"),
+def _transcribe(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> Dict[str, Any]:
+    input_path = Path(payload["input_path"]).expanduser()
+    if not input_path.exists():
+        raise FileNotFoundError(f"Audio file not found: {input_path}")
+
+    job_dir = Path(settings.storage_dir) / "jobs" / str(job_uuid)
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    prepared_audio = job_dir / "audio.wav"
+    _convert_audio(input_path, prepared_audio)
+    _copy_transcript_sidecar(input_path, prepared_audio)
+
+    engine = get_engine()
+    options = TranscriptionOptions(
+        model_size=payload.get("model_name", settings.default_model_size),
+        enable_dialect_map=payload.get("dialect_mapping", False),
     )
+    result = engine.transcribe(prepared_audio, options)
 
-
-def _store_result(session: Session, job: TranscriptionJob, result, audio_path: Path) -> None:
-    job.segments.clear()
-    for segment in result.segments:
-        job.segments.append(
-            TranscriptSegment(
-                start=segment.start,
-                end=segment.end,
-                text=segment.text,
-                speaker=segment.speaker,
-                confidence=segment.confidence,
-                language=segment.language,
-            )
-        )
-
-    output_dir = Path(settings.storage_dir) / "jobs" / str(job.id)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    text_path = output_dir / "transcript.txt"
+    text_path = job_dir / "transcript.txt"
     text_path.write_text(result.text, encoding="utf-8")
-    job.output_txt_path = str(text_path)
-    _register_artifact(job, "txt", text_path)
+    logger.info("Wrote %s", text_path)
 
-    jsonl_path = output_dir / "segments.jsonl"
-    with jsonl_path.open("w", encoding="utf-8") as file:
-        for segment in result.segments:
+    jsonl_path = job_dir / "segments.jsonl"
+    _write_segments(jsonl_path, result.segments)
+
+    srt_path = job_dir / "transcript.srt"
+    srt_path.write_text(_to_srt(result.segments), encoding="utf-8")
+    logger.info("Wrote %s", srt_path)
+
+    vtt_path = job_dir / "transcript.vtt"
+    vtt_path.write_text(_to_vtt(result.segments), encoding="utf-8")
+    logger.info("Wrote %s", vtt_path)
+
+    return {
+        "text": result.text,
+        "dialect_text": result.dialect_mapped_text,
+        "txt_path": str(text_path),
+        "srt_path": str(srt_path),
+        "vtt_path": str(vtt_path),
+        "jsonl_path": str(jsonl_path),
+    }
+
+
+def _convert_audio(source: Path, destination: Path) -> None:
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if ffmpeg_bin is None:
+        shutil.copy(source, destination)
+        logger.warning("ffmpeg not available; copied %s to %s without conversion", source, destination)
+        return
+
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-i",
+        str(source),
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        str(destination),
+    ]
+    logger.info("Converting %s to mono WAV via ffmpeg", source)
+    completed = subprocess.run(command, capture_output=True, text=True)
+    if completed.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {completed.stderr.strip()}")
+
+
+def _copy_transcript_sidecar(source: Path, converted: Path) -> None:
+    sidecar = source.with_suffix(".json")
+    if not sidecar.exists():
+        return
+    target = converted.with_suffix(".json")
+    try:
+        shutil.copy(sidecar, target)
+        logger.info("Copied sidecar %s to %s", sidecar, target)
+    except Exception as exc:  # pragma: no cover - best effort logging
+        logger.warning("Failed to copy sidecar %s: %s", sidecar, exc)
+
+
+def _write_segments(path: Path, segments: list[Segment]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for segment in segments:
             payload = {
                 "start": segment.start,
                 "end": segment.end,
@@ -198,37 +224,39 @@ def _store_result(session: Session, job: TranscriptionJob, result, audio_path: P
                 "speaker": segment.speaker,
                 "language": segment.language,
             }
-            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    job.output_jsonl_path = str(jsonl_path)
-    _register_artifact(job, "jsonl", jsonl_path)
-
-    srt_path = output_dir / "transcript.srt"
-    srt_path.write_text(_to_srt(result.segments), encoding="utf-8")
-    job.output_srt_path = str(srt_path)
-    _register_artifact(job, "srt", srt_path)
-
-    vtt_path = output_dir / "transcript.vtt"
-    vtt_path.write_text(_to_vtt(result.segments), encoding="utf-8")
-    job.output_vtt_path = str(vtt_path)
-    _register_artifact(job, "vtt", vtt_path)
-
-    job.text = result.text
-    job.options.update(
-        {
-            "text": result.text,
-            "dialect_text": result.dialect_mapped_text,
-            "metadata": result.metadata,
-            "audio_path": str(audio_path),
-        }
-    )
+            handle.write(json.dumps(payload, ensure_ascii=False))
+            handle.write("\n")
+    logger.info("Wrote %s", path)
 
 
-def _register_artifact(job: TranscriptionJob, format: str, path: Path) -> None:
-    artifact = next((a for a in job.artifacts if a.format == format), None)
-    if artifact:
-        artifact.path = str(path)
-    else:
-        job.artifacts.append(TranscriptArtifact(format=format, path=str(path)))
+def _mark_job_finished(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> None:
+    with db_session() as session:
+        job = session.get(TranscriptionJob, job_uuid)
+        if not job:
+            logger.error("Job %s missing when marking finished", job_uuid)
+            return
+        job.status = JobStatus.finished
+        job.text = payload.get("text")
+        job.dialect_text = payload.get("dialect_text")
+        job.output_txt_path = payload.get("txt_path")
+        job.output_srt_path = payload.get("srt_path")
+        job.output_vtt_path = payload.get("vtt_path")
+        job.output_jsonl_path = payload.get("jsonl_path")
+        job.error_message = None
+        job.touch()
+        session.commit()
+
+
+def _mark_job_error(job_uuid: uuid.UUID, message: str) -> None:
+    with db_session() as session:
+        job = session.get(TranscriptionJob, job_uuid)
+        if not job:
+            logger.error("Job %s missing when marking error", job_uuid)
+            return
+        job.status = JobStatus.error
+        job.error_message = message or "Unknown error"
+        job.touch()
+        session.commit()
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -238,8 +266,8 @@ def _format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:06.3f}".replace(".", ",")
 
 
-def _to_srt(segments: List[Segment]) -> str:
-    lines = []
+def _to_srt(segments: list[Segment]) -> str:
+    lines: list[str] = []
     for index, segment in enumerate(segments, start=1):
         start = _format_timestamp(segment.start)
         end = _format_timestamp(segment.end)
@@ -251,7 +279,7 @@ def _to_srt(segments: List[Segment]) -> str:
     return "\n".join(lines).strip()
 
 
-def _to_vtt(segments: List[Segment]) -> str:
+def _to_vtt(segments: list[Segment]) -> str:
     lines = ["WEBVTT", ""]
     for segment in segments:
         start = _format_timestamp(segment.start).replace(",", ".")
@@ -261,3 +289,6 @@ def _to_vtt(segments: List[Segment]) -> str:
         lines.append(f"{speaker_prefix}{segment.text}")
         lines.append("")
     return "\n".join(lines).strip()
+
+
+__all__ = ["enqueue_transcription", "process_transcription"]

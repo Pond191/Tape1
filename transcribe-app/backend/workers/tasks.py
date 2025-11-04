@@ -10,11 +10,9 @@ from typing import Any, Dict, Optional
 try:  # pragma: no cover - optional dependency
     from celery import shared_task
 except Exception:  # pragma: no cover
-
     def shared_task(*_args, **_kwargs):  # type: ignore
         def decorator(func):
             return func
-
         return decorator
 
 from sqlalchemy.exc import OperationalError
@@ -39,6 +37,7 @@ _engine: Optional[ASREngine] = None
 
 
 def get_engine() -> ASREngine:
+    """Singleton loader for the ASR engine."""
     global _engine
     if _engine is None:
         _engine = load_engine()
@@ -46,6 +45,7 @@ def get_engine() -> ASREngine:
 
 
 def enqueue_transcription(job_id: str) -> None:
+    """Enqueue a transcription job via Celery; fallback to sync if Celery unavailable."""
     if celery_app is not None:
         try:
             transcribe_audio.apply_async(args=[str(job_id)], queue=QUEUE_NAME)
@@ -96,6 +96,7 @@ def _run_transcription(job_id: str, task=None) -> None:
 
 
 def _acquire_job(job_uuid: uuid.UUID, task) -> Optional[Dict[str, Any]]:
+    """Load the job from DB and mark it running; retry a few times if DB is not ready."""
     with db_session() as session:
         try:
             job = session.get(TranscriptionJob, job_uuid)
@@ -134,6 +135,7 @@ def _acquire_job(job_uuid: uuid.UUID, task) -> Optional[Dict[str, Any]]:
 
 
 def _transcribe(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Core transcription routine: prepare audio, call engine, write outputs."""
     input_path = Path(payload["input_path"]).expanduser()
     if not input_path.exists():
         raise FileNotFoundError(f"Audio file not found: {input_path}")
@@ -152,30 +154,44 @@ def _transcribe(job_uuid: uuid.UUID, payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     result = engine.transcribe(prepared_audio, options)
 
+    # --- Build plain text safely ---
+    # ใช้ข้อความจาก segments เป็นหลัก; ถ้าไม่มีค่อยพิจารณา result.text
     segment_texts = [
-        segment.text.strip()
-        for segment in result.segments
-        if getattr(segment, "text", "").strip()
+        (segment.text or "").strip()
+        for segment in getattr(result, "segments", []) or []
+        if (getattr(segment, "text", "") or "").strip()
     ]
-    plain_text = (result.text or "").strip() or "\n".join(segment_texts)
+    joined = "\n".join(segment_texts).strip()
+    candidate = (getattr(result, "text", "") or "").strip()
+
+    # กันเคส placeholder สั้น ๆ เช่น "audio."
+    if not joined:
+        if candidate and len(candidate) >= 8 and candidate.lower() not in {"audio.", "audio", "file", "sound"}:
+            plain_text = candidate
+        else:
+            plain_text = "(no speech detected or ASR backend returned no segments)"
+    else:
+        plain_text = joined
+
+    # เขียนไฟล์ผลลัพธ์
     text_path = job_dir / "transcript.txt"
     text_path.write_text(plain_text, encoding="utf-8")
     logger.info("Wrote transcript.txt with %d characters", len(plain_text))
 
     jsonl_path = job_dir / "segments.jsonl"
-    _write_segments(jsonl_path, result.segments)
+    _write_segments(jsonl_path, getattr(result, "segments", []) or [])
 
     srt_path = job_dir / "transcript.srt"
-    srt_path.write_text(_to_srt(result.segments), encoding="utf-8")
+    srt_path.write_text(_to_srt(getattr(result, "segments", []) or []), encoding="utf-8")
     logger.info("Wrote %s", srt_path)
 
     vtt_path = job_dir / "transcript.vtt"
-    vtt_path.write_text(_to_vtt(result.segments), encoding="utf-8")
+    vtt_path.write_text(_to_vtt(getattr(result, "segments", []) or []), encoding="utf-8")
     logger.info("Wrote %s", vtt_path)
 
     return {
         "text": plain_text,
-        "dialect_text": result.dialect_mapped_text,
+        "dialect_text": getattr(result, "dialect_mapped_text", None),
         "txt_path": str(text_path),
         "srt_path": str(srt_path),
         "vtt_path": str(vtt_path),
@@ -195,10 +211,8 @@ def _convert_audio(source: Path, destination: Path) -> None:
         "-y",
         "-i",
         str(source),
-        "-ar",
-        "16000",
-        "-ac",
-        "1",
+        "-ar", "16000",
+        "-ac", "1",
         str(destination),
     ]
     logger.info("Converting %s to mono WAV via ffmpeg", source)
@@ -208,6 +222,7 @@ def _convert_audio(source: Path, destination: Path) -> None:
 
 
 def _copy_transcript_sidecar(source: Path, converted: Path) -> None:
+    """If a sidecar JSON transcript exists beside the original, copy it next to converted audio."""
     sidecar = source.with_suffix(".json")
     if not sidecar.exists():
         return
@@ -303,6 +318,7 @@ def _to_vtt(segments: list[Segment]) -> str:
     return "\n".join(lines).strip()
 
 
+# Backward-compat alias used elsewhere in the codebase
 process_transcription = transcribe_audio
 
 __all__ = ["enqueue_transcription", "transcribe_audio", "process_transcription"]

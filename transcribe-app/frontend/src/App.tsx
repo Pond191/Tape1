@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import Upload from "./components/Upload";
 import JobList from "./components/JobList";
 import { JobDetail, JobSummary } from "./api/client";
@@ -13,6 +14,7 @@ export default function App() {
       text: null,
       dialect_text: null,
       error_message: null,
+      original_filename: null,
       files: { txt: null, srt: null, vtt: null, jsonl: null }
     };
     setJobs((current) => [...current, initialJob]);

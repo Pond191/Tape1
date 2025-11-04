@@ -17,6 +17,7 @@ class Settings:
     environment: str = "development"
     log_level: str = "INFO"
     storage_dir: str = "/data"
+    log_dir: str = "/data/logs"
     max_upload_mb: int = 200
     retention_days: int = 30
     database_url: str = "postgresql+psycopg://transcribe:transcribe@db:5432/transcribe"
@@ -44,6 +45,7 @@ def _build_settings_kwargs() -> Dict[str, Any]:
         "environment": os.getenv("TRANSCRIBE_ENVIRONMENT", "development"),
         "log_level": os.getenv("TRANSCRIBE_LOG_LEVEL", "INFO"),
         "storage_dir": os.getenv("TRANSCRIBE_STORAGE_DIR", "/data"),
+        "log_dir": os.getenv("TRANSCRIBE_LOG_DIR", os.path.join(os.getenv("TRANSCRIBE_STORAGE_DIR", "/data"), "logs")),
         "max_upload_mb": int(os.getenv("MAX_UPLOAD_MB", "200")),
         "retention_days": int(os.getenv("TRANSCRIBE_RETENTION_DAYS", "30")),
         "database_url": database_url,
@@ -68,4 +70,6 @@ def _build_settings_kwargs() -> Dict[str, Any]:
 def get_settings() -> Settings:
     settings = Settings(**_build_settings_kwargs())
     os.makedirs(settings.storage_dir, exist_ok=True)
+    if settings.log_dir:
+        os.makedirs(settings.log_dir, exist_ok=True)
     return settings

@@ -29,7 +29,7 @@ from .core.logging import configure_logging, logger
 from .db.session import init_db
 
 settings = get_settings()
-configure_logging(settings.log_level)
+configure_logging(settings.log_level, settings.log_dir)
 
 app = FastAPI(title=settings.app_name)
 

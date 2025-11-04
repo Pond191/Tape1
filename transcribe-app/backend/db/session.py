@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Generator, Iterator, Optional
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..core.config import get_settings
@@ -27,8 +27,12 @@ def _ensure_engine() -> Engine:
         return _ENGINE
 
     connect_args: dict[str, object] = {}
-    if settings.database_url.startswith("sqlite"):
+    url = make_url(settings.database_url)
+    if url.get_backend_name() == "sqlite":
         connect_args["check_same_thread"] = False
+        if url.database:
+            db_path = Path(url.database).expanduser()
+            db_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("Connecting to database %s", settings.database_url)
     _ENGINE = create_engine(
@@ -50,46 +54,6 @@ def _ensure_engine() -> Engine:
 
 def get_engine() -> Engine:
     return _ensure_engine()
-
-
-def _run_migrations() -> bool:
-    config_candidates: list[Path] = []
-    env_config = os.getenv("ALEMBIC_CONFIG")
-    if env_config:
-        config_candidates.append(Path(env_config))
-
-    current_dir = Path(__file__).resolve()
-    config_candidates.extend(
-        [
-            current_dir.parents[2] / "alembic.ini",  # backend/alembic.ini
-            current_dir.parents[3] / "alembic.ini",  # project root
-        ]
-    )
-
-    seen: set[Path] = set()
-    for candidate in config_candidates:
-        if not candidate:
-            continue
-        candidate = candidate.resolve()
-        if candidate in seen or not candidate.exists():
-            continue
-        seen.add(candidate)
-        try:
-            from alembic import command  # type: ignore
-            from alembic.config import Config  # type: ignore
-        except Exception:  # pragma: no cover - alembic not installed
-            logger.debug("Alembic not available; skipping migrations")
-            return False
-
-        logger.info("Running Alembic migrations using %s", candidate)
-        config = Config(str(candidate))
-        if not config.get_main_option("script_location"):
-            script_location = candidate.parent / "alembic"
-            if script_location.exists():
-                config.set_main_option("script_location", str(script_location))
-        command.upgrade(config, "head")
-        return True
-    return False
 
 
 def _run_migrations() -> bool:

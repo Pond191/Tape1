@@ -48,7 +48,7 @@ def get_engine() -> ASREngine:
 def enqueue_transcription(job_id: str) -> None:
     if celery_app is not None:
         try:
-            process_transcription.apply_async(args=[str(job_id)], queue=QUEUE_NAME)
+            transcribe_audio.apply_async(args=[str(job_id)], queue=QUEUE_NAME)
             return
         except Exception as exc:
             logger.exception("Celery enqueue failed for job %s: %s", job_id, exc)
@@ -62,9 +62,9 @@ def enqueue_transcription(job_id: str) -> None:
     bind=True,
     max_retries=5,
     default_retry_delay=1,
-    name="backend.workers.tasks.process_transcription",
+    name="backend.workers.tasks.transcribe_audio",
 )
-def process_transcription(self, job_id: str) -> None:  # pragma: no cover - executed via Celery
+def transcribe_audio(self, job_id: str) -> None:  # pragma: no cover - executed via Celery
     _run_transcription(job_id, task=self)
 
 
@@ -303,4 +303,6 @@ def _to_vtt(segments: list[Segment]) -> str:
     return "\n".join(lines).strip()
 
 
-__all__ = ["enqueue_transcription", "process_transcription"]
+process_transcription = transcribe_audio
+
+__all__ = ["enqueue_transcription", "transcribe_audio", "process_transcription"]

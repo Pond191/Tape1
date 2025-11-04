@@ -46,17 +46,29 @@ Backend จะเปิดที่ `http://localhost:8000`, Frontend dev server
 
 ## รันด้วย Docker / Compose
 
+> ต้องการ Docker Engine และ Docker Compose plugin เวอร์ชันล่าสุด
+
 ```bash
 cd transcribe-app
-docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml build
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
-ระบบจะเปิดผ่าน Nginx ที่ `http://localhost:8080`
+คำสั่งแรกจะ build image ของ backend/frontend/worker ให้พร้อม จากนั้น `up -d` จะเปิดทุก service (Postgres, Redis, API, Worker, Frontend, Nginx)
+
+ตรวจสอบสถานะ:
+
+```bash
+docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml logs -f api
+```
+
+เมื่อทุกอย่างพร้อม ให้เปิด `http://localhost:8080` (ผ่าน Nginx) หรือ `http://localhost:8000` (ตรงจาก API)
 
 ## สเปค API
 
-### POST `/api/upload`
-อัปโหลดไฟล์เสียง (multipart/form-data) พร้อมเลือกโมเดลและเปิด/ปิด Dialect mapping
+### POST `/api/upload` และ `/api/transcribe`
+อัปโหลดไฟล์เสียง (multipart/form-data) พร้อมเลือกโมเดลและเปิด/ปิด Dialect mapping. ทั้งสอง path ให้ผลลัพธ์เท่ากันเพื่อรองรับ client รุ่นเก่าและใหม่
 
 ตัวอย่าง curl:
 
@@ -82,6 +94,12 @@ Response: `{ "id": "...", "status": "pending" }`
 
 ```bash
 pytest transcribe-app/backend/tests
+```
+
+หรือถ้าใช้ Docker Compose แล้ว services เปิดอยู่ สามารถรันใน container API ได้ด้วย:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec api pytest backend/tests
 ```
 
 สคริปต์ benchmark:

@@ -215,3 +215,20 @@ async def upload_audio(
         size,
     )
     return JobUploadResponse(id=job.id, job_id=job.id, status=job.status)
+
+
+@router.post("/transcribe", response_model=JobUploadResponse)
+async def create_transcription_job(
+    file: UploadFile = File(...),
+    model_size: str = Form("small"),
+    enable_dialect_map: bool | str | None = Form(False),
+    session: Session = Depends(get_db),
+) -> JobUploadResponse:
+    """Alias endpoint that mirrors :func:`upload_audio` for backward compatibility."""
+
+    return await upload_audio(
+        file=file,
+        model_size=model_size,
+        enable_dialect_map=enable_dialect_map,
+        session=session,
+    )

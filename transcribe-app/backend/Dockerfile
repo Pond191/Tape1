@@ -5,6 +5,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc g++ make python3-dev \
+    libgomp1 \
     ffmpeg \
     curl \
     dos2unix \

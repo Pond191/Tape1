@@ -1,13 +1,7 @@
-#!/usr/bin/env sh
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-mkdir -p /data/uploads /data/jobs
-chown -R 1000:1000 /data 2>/dev/null || true
+export PYTHONUNBUFFERED=1
 
-python - <<'PY'
-from backend.db.session import init_db
-
-init_db()
-PY
-
-exec gosu app celery -A backend.workers.celery_app worker -l info -Q transcribe,celery
+# ชื่อ queue มาจาก env CELERY_QUEUE (docker-compose ตั้งไว้เป็น "transcribe")
+exec celery -A backend.workers.celery_app.celery_app worker -l info -Q "${CELERY_QUEUE:-transcribe}"

@@ -13,8 +13,7 @@ services:
       POSTGRES_PASSWORD: transcribe
     volumes:
       - db-data:/var/lib/postgresql/data
-    networks:
-      - transcribe
+    networks: [transcribe]
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U transcribe -d transcribe"]
@@ -24,16 +23,22 @@ services:
 
   redis:
     image: redis:7
-    networks:
-      - transcribe
+    networks: [transcribe]
     restart: unless-stopped
 
   api:
     build:
       context: ..
       dockerfile: backend/Dockerfile
+    entrypoint: /usr/local/bin/start-api   # (เพิ่มให้ชัดเจน)
     environment:
+      # ที่เก็บไฟล์ (ตั้งสองตัวแปรให้รองรับทุกโค้ดเส้นทาง)
+      STORAGE_DIR: /data
       TRANSCRIBE_STORAGE_DIR: /data
+
+      # ขนาดโมเดล default
+      DEFAULT_MODEL_SIZE: small
+
       <<: *database-urls
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -41,10 +46,14 @@ services:
       CELERY_EAGER: "0"
       CELERY_QUEUE: transcribe
       MAX_UPLOAD_MB: "200"
+
+      # (ตัวเลือก) บังคับอุปกรณ์/precision
+      # TRANSCRIBE_DEVICE: "cpu"         # หรือ "cuda"
+      # TRANSCRIBE_COMPUTE: "int8"       # หรือ "int8_float16"|"float16"|"float32"
     volumes:
       - ../storage:/data
     ports:
-      - "8000:8000"      # เปิดไว้เพื่อเทสต์จากเครื่อง
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -56,24 +65,34 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
-    networks:
-      - transcribe
+    networks: [transcribe]
 
   worker:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    entrypoint:
-      - /usr/local/bin/start-worker
+    entrypoint: /usr/local/bin/start-worker
     environment:
+      STORAGE_DIR: /data
       TRANSCRIBE_STORAGE_DIR: /data
+      DEFAULT_MODEL_SIZE: small
+
       <<: *database-urls
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       CELERY_EAGER: "0"
+
+      # สำคัญสุดสำหรับสคริปต์ start-worker.sh
+      QUEUE_NAME: transcribe
+
+      # (ยังคงไว้ได้ เผื่อโค้ดฝั่งอื่นอ่าน)
       CELERY_QUEUE: transcribe
       CELERY_QUEUES: transcribe,celery
+
+      # (ตัวเลือก)
+      # TRANSCRIBE_DEVICE: "cpu"
+      # TRANSCRIBE_COMPUTE: "int8"
     volumes:
       - ../storage:/data
     depends_on:
@@ -84,16 +103,14 @@ services:
       api:
         condition: service_started
     restart: unless-stopped
-    networks:
-      - transcribe
+    networks: [transcribe]
 
   web:
     build: ../frontend
     depends_on:
       api:
         condition: service_started
-    networks:
-      - transcribe
+    networks: [transcribe]
     restart: unless-stopped
 
   nginx:
@@ -108,13 +125,13 @@ services:
         condition: service_started
     ports:
       - "8080:80"
+    # healthcheck เดิมใช้ curl ซึ่งไม่มีใน image nginx
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost/nginx-health || exit 1"]
+      test: ["CMD-SHELL", "nginx -t || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - transcribe
+    networks: [transcribe]
 
 volumes:
   db-data:

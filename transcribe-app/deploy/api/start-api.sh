@@ -1,15 +1,9 @@
-#!/usr/bin/env sh
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-mkdir -p /data/uploads /data/jobs
-chown -R 1000:1000 /data 2>/dev/null || true
+export PYTHONUNBUFFERED=1
 
-python - <<'PY'
-from backend.db.session import init_db
+# รอ DB/Redis แป๊บ (ไม่ต้องรอถ้าดีอยู่แล้ว)
+# sleep 2
 
-init_db()
-PY
-
-echo "MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-unset}"
-
-exec gosu app uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+exec uvicorn backend.api.main:app --host 0.0.0.0 --port 8000

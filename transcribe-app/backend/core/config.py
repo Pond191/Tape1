@@ -28,7 +28,8 @@ class Settings:
     vad_engine: str = "webrtc"
     diarization_engine: str = "pyannote"
     enable_redaction: bool = False
-    redact_patterns: str = r"(?P<phone0[689]\d{8)|(?P<national_id\d{13)|(?P<account\d{10,12)"
+    # ✅ แก้ regex ให้ถูกต้อง
+    redact_patterns: str = r"(?P<phone>0[689]\d{8})|(?P<national_id>\d{13})|(?P<account>\d{10,12})"
     asr_backend: str = "auto"
     whisper_compute_type: Optional[str] = None
     whisper_download_root: Optional[str] = None
@@ -40,12 +41,13 @@ def _build_settings_kwargs() -> Dict[str, Any]:
         or os.getenv("DATABASE_URL")
         or "postgresql+psycopg://transcribe:transcribe@db:5432/transcribe"
     )
+    storage_dir = os.getenv("TRANSCRIBE_STORAGE_DIR", "/data")
     return {
         "app_name": os.getenv("TRANSCRIBE_APP_NAME", "DialectTranscribe"),
         "environment": os.getenv("TRANSCRIBE_ENVIRONMENT", "development"),
         "log_level": os.getenv("TRANSCRIBE_LOG_LEVEL", "INFO"),
-        "storage_dir": os.getenv("TRANSCRIBE_STORAGE_DIR", "/data"),
-        "log_dir": os.getenv("TRANSCRIBE_LOG_DIR", os.path.join(os.getenv("TRANSCRIBE_STORAGE_DIR", "/data"), "logs")),
+        "storage_dir": storage_dir,
+        "log_dir": os.getenv("TRANSCRIBE_LOG_DIR", os.path.join(storage_dir, "logs")),
         "max_upload_mb": int(os.getenv("MAX_UPLOAD_MB", "200")),
         "retention_days": int(os.getenv("TRANSCRIBE_RETENTION_DAYS", "30")),
         "database_url": database_url,
@@ -58,7 +60,7 @@ def _build_settings_kwargs() -> Dict[str, Any]:
         "enable_redaction": _get_bool("TRANSCRIBE_ENABLE_REDACTION", False),
         "redact_patterns": os.getenv(
             "TRANSCRIBE_REDACT_PATTERNS",
-            r"(?P<phone0[689]\d{8)|(?P<national_id\d{13)|(?P<account\d{10,12)",
+            r"(?P<phone>0[689]\d{8})|(?P<national_id>\d{13})|(?P<account>\d{10,12})",
         ),
         "asr_backend": os.getenv("TRANSCRIBE_ASR_BACKEND", "auto"),
         "whisper_compute_type": os.getenv("TRANSCRIBE_WHISPER_COMPUTE_TYPE"),

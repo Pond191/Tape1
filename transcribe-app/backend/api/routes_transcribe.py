@@ -214,7 +214,8 @@ async def upload_audio(
         original_name,
         size,
     )
-    return JobUploadResponse(id=job.id, job_id=job.id, status=job.status)
+    return JobUploadResponse(id=str(job.id), job_id=str(job.id), status=job.status)
+
 
 
 @router.post("/transcribe", response_model=JobUploadResponse)

@@ -57,7 +57,7 @@ def get_job(job_id: str, session: Session = Depends(get_db)) -> JobDetailRespons
             logger.warning("Unable to read transcript for job %s: %s", job_id, exc)
 
     return JobDetailResponse(
-        id=job.id,
+        id=str(job.id),
         status=job.status,
         text=text_value,
         dialect_text=job.dialect_text,
@@ -65,6 +65,7 @@ def get_job(job_id: str, session: Session = Depends(get_db)) -> JobDetailRespons
         original_filename=job.original_filename,
         files=_build_files(job),
     )
+
 
 
 def _serve_artifact(path_value: str | None, media_type: str, filename: str) -> FileResponse:

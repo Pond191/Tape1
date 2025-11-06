@@ -1,3 +1,4 @@
+# backend/requirements.txt
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
 sqlalchemy==2.0.27
@@ -9,13 +10,9 @@ psycopg[binary]==3.1.18
 jiwer==3.0.3
 webrtcvad==2.0.10
 numpy==1.26.4
-
-# --- ตัวที่ทำให้ล้มอยู่ ให้ปักหมุดแบบนี้ ---
-ctranslate2==4.3.1
 faster-whisper==1.0.3
-requests==2.31.0
-# ---------------------------------------------
-
+ctranslate2>=4.5.0
+requests>=2.32.0
 pytest==7.4.4
 httpx==0.26.0
 pytest-asyncio==0.23.5
